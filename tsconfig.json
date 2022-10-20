@@ -1,0 +1,11 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"strict": true,
+		"strictNullChecks": false,
+		"noImplicitAny": true
+	},
+	"include": [
+		"src/**/*"
+	]
+}
