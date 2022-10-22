@@ -17,7 +17,7 @@
 	let fileWritableStream = await fileHandle.createWritable();
 
 	let writer = new WebMWriter({
-		target: 'buffer' ?? fileWritableStream,
+		target: fileWritableStream,
 		video: {
 			codec: 'V_VP9',
 			width: 1280,
@@ -89,7 +89,9 @@
 	let maybeBuffer = writer.finalize();
 	console.log(maybeBuffer);
 
-	fileWritableStream.close();
+	await fileWritableStream.close();
+
+	console.log("Done")
 
 	/*
 

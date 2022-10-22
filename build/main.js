@@ -320,28 +320,24 @@
         }
         addVideoChunk(chunk) {
           this.lastVideoTimestamp = chunk.timestamp;
-          console.log(chunk);
           while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= chunk.timestamp) {
             let audioChunk = this.audioChunkQueue.shift();
             this.writeSimpleBlock(audioChunk);
           }
           if (!this.options.audio || chunk.timestamp <= this.lastAudioTimestamp) {
             this.writeSimpleBlock(chunk);
-            this.lastVideoTimestamp = chunk.timestamp;
           } else {
             this.videoChunkQueue.push(chunk);
           }
         }
         addAudioChunk(chunk, meta) {
           this.lastAudioTimestamp = chunk.timestamp;
-          console.log(chunk);
           while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= chunk.timestamp) {
             let videoChunk = this.videoChunkQueue.shift();
             this.writeSimpleBlock(videoChunk);
           }
           if (!this.options.video || chunk.timestamp <= this.lastVideoTimestamp) {
             this.writeSimpleBlock(chunk);
-            this.lastAudioTimestamp = chunk.timestamp;
           } else {
             this.audioChunkQueue.push(chunk);
           }
@@ -358,7 +354,7 @@
         }
         writeSimpleBlock(chunk) {
           let msTime = Math.floor(chunk.timestamp / 1e3);
-          if (!this.currentCluster || (chunk instanceof EncodedVideoChunk && chunk.type === "key" || msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS)) {
+          if (!this.currentCluster || chunk instanceof EncodedVideoChunk && chunk.type === "key" && msTime - this.currentClusterTimestamp >= 1e3 || msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS) {
             this.createNewCluster(msTime);
           }
           let prelude = new Uint8Array(4);

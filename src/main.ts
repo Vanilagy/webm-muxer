@@ -156,8 +156,6 @@ class WebMWriter {
 
 	addVideoChunk(chunk: EncodedVideoChunk) {
 		this.lastVideoTimestamp = chunk.timestamp;
-		
-		console.log(chunk);
 
 		while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= chunk.timestamp) {
 			let audioChunk = this.audioChunkQueue.shift();
@@ -166,7 +164,6 @@ class WebMWriter {
 
 		if (!this.options.audio || chunk.timestamp <= this.lastAudioTimestamp) {
 			this.writeSimpleBlock(chunk);
-			this.lastVideoTimestamp = chunk.timestamp;
 		} else {
 			this.videoChunkQueue.push(chunk);
 		}
@@ -174,8 +171,6 @@ class WebMWriter {
 	
 	addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata) {
 		this.lastAudioTimestamp = chunk.timestamp;
-		
-		console.log(chunk);
 
 		while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= chunk.timestamp) {
 			let videoChunk = this.videoChunkQueue.shift();
@@ -184,7 +179,6 @@ class WebMWriter {
 
 		if (!this.options.video || chunk.timestamp <= this.lastVideoTimestamp) {
 			this.writeSimpleBlock(chunk);
-			this.lastAudioTimestamp = chunk.timestamp;
 		} else {
 			this.audioChunkQueue.push(chunk);
 		}
@@ -206,7 +200,11 @@ class WebMWriter {
 	writeSimpleBlock(chunk: EncodedVideoChunk | EncodedAudioChunk) {
 		let msTime = Math.floor(chunk.timestamp / 1000);
 
-		if (!this.currentCluster || (chunk instanceof EncodedVideoChunk && chunk.type === 'key' || msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS)) {
+		if (
+			!this.currentCluster ||
+			(chunk instanceof EncodedVideoChunk && chunk.type === 'key' && msTime - this.currentClusterTimestamp >= 1000) ||
+			msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS
+		) {
 			this.createNewCluster(msTime);
 		}
 
