@@ -1,27 +1,38 @@
 "use strict";
 (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __esm = (fn, res) => function __init() {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  };
   var __commonJS = (cb, mod) => function __require() {
     return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
   };
 
-  // src/main.ts
-  var require_main = __commonJS({
-    "src/main.ts"(exports, module) {
-      var VIDEO_TRACK_NUMBER = 1;
-      var AUDIO_TRACK_NUMBER = 2;
-      var MAX_CHUNK_LENGTH_MS = 32e3;
-      var EBMLFloat32 = class {
+  // src/ebml.ts
+  var EBMLFloat32, EBMLFloat64;
+  var init_ebml = __esm({
+    "src/ebml.ts"() {
+      "use strict";
+      EBMLFloat32 = class {
         constructor(value) {
           this.value = value;
         }
       };
-      var EBMLFloat64 = class {
+      EBMLFloat64 = class {
         constructor(value) {
           this.value = value;
         }
       };
-      var WriteTarget = class {
+    }
+  });
+
+  // src/write_target.ts
+  var WriteTarget, ArrayBufferWriteTarget, FileSystemWritableFileStreamWriteTarget, measureUnsignedInt, measureEBMLVarInt;
+  var init_write_target = __esm({
+    "src/write_target.ts"() {
+      "use strict";
+      init_ebml();
+      WriteTarget = class {
         constructor() {
           this.pos = 0;
           this.helper = new Uint8Array(8);
@@ -134,7 +145,7 @@
           }
         }
       };
-      var ArrayBufferWriteTarget = class extends WriteTarget {
+      ArrayBufferWriteTarget = class extends WriteTarget {
         constructor() {
           super();
           this.buffer = new ArrayBuffer(2 ** 16);
@@ -162,7 +173,7 @@
           return this.buffer.slice(0, this.pos);
         }
       };
-      var FileSystemWritableFileStreamWriteTarget = class extends WriteTarget {
+      FileSystemWritableFileStreamWriteTarget = class extends WriteTarget {
         constructor(stream) {
           super();
           this.stream = stream;
@@ -176,7 +187,7 @@
           this.pos = newPos;
         }
       };
-      var measureUnsignedInt = (value) => {
+      measureUnsignedInt = (value) => {
         if (value < 1 << 8) {
           return 1;
         } else if (value < 1 << 16) {
@@ -189,7 +200,7 @@
           return 5;
         }
       };
-      var measureEBMLVarInt = (value) => {
+      measureEBMLVarInt = (value) => {
         if (value < (1 << 7) - 1) {
           return 1;
         } else if (value < (1 << 14) - 1) {
@@ -204,6 +215,17 @@
           throw new Error("EBML VINT size not supported " + value);
         }
       };
+    }
+  });
+
+  // src/main.ts
+  var require_main = __commonJS({
+    "src/main.ts"(exports, module) {
+      init_ebml();
+      init_write_target();
+      var VIDEO_TRACK_NUMBER = 1;
+      var AUDIO_TRACK_NUMBER = 2;
+      var MAX_CHUNK_LENGTH_MS = 32e3;
       var WebMWriter = class {
         constructor(options) {
           this.duration = 0;
@@ -220,78 +242,81 @@
           this.writeHeader();
         }
         writeHeader() {
-          let ebmlHeader = { id: 440786851, data: [
-            { id: 17030, data: 1 },
-            { id: 17143, data: 1 },
-            { id: 17138, data: 4 },
-            { id: 17139, data: 8 },
-            { id: 17026, data: "webm" },
-            { id: 17031, data: 2 },
-            { id: 17029, data: 2 }
+          let ebmlHeader = { id: 440786851 /* EBML */, data: [
+            { id: 17030 /* EBMLVersion */, data: 1 },
+            { id: 17143 /* EBMLReadVersion */, data: 1 },
+            { id: 17138 /* EBMLMaxIDLength */, data: 4 },
+            { id: 17139 /* EBMLMaxSizeLength */, data: 8 },
+            { id: 17026 /* DocType */, data: "webm" },
+            { id: 17031 /* DocTypeVersion */, data: 2 },
+            { id: 17029 /* DocTypeReadVersion */, data: 2 }
           ] };
           this.target.writeEBML(ebmlHeader);
-          let seekHead = { id: 290298740, data: [
-            { id: 19899, data: [
-              { id: 21419, data: new Uint8Array([28, 83, 187, 107]) },
-              { id: 21420, size: 5, data: 0 }
+          const kaxCues = new Uint8Array([28, 83, 187, 107]);
+          const kaxInfo = new Uint8Array([21, 73, 169, 102]);
+          const kaxTracks = new Uint8Array([22, 84, 174, 107]);
+          let seekHead = { id: 290298740 /* SeekHead */, data: [
+            { id: 19899 /* Seek */, data: [
+              { id: 21419 /* SeekID */, data: kaxCues },
+              { id: 21420 /* SeekPosition */, size: 5, data: 0 }
             ] },
-            { id: 19899, data: [
-              { id: 21419, data: new Uint8Array([21, 73, 169, 102]) },
-              { id: 21420, size: 5, data: 0 }
+            { id: 19899 /* Seek */, data: [
+              { id: 21419 /* SeekID */, data: kaxInfo },
+              { id: 21420 /* SeekPosition */, size: 5, data: 0 }
             ] },
-            { id: 19899, data: [
-              { id: 21419, data: new Uint8Array([22, 84, 174, 107]) },
-              { id: 21420, size: 5, data: 0 }
+            { id: 19899 /* Seek */, data: [
+              { id: 21419 /* SeekID */, data: kaxTracks },
+              { id: 21420 /* SeekPosition */, size: 5, data: 0 }
             ] }
           ] };
           this.seekHead = seekHead;
-          let segmentDuration = { id: 17545, data: new EBMLFloat64(0) };
+          let segmentDuration = { id: 17545 /* Duration */, data: new EBMLFloat64(0) };
           this.segmentDuration = segmentDuration;
-          let segmentInfo = { id: 357149030, data: [
-            { id: 2807729, data: 1e6 },
-            { id: 19840, data: "Vani's epic muxer" },
-            { id: 22337, data: "Vani's epic muxer" },
+          let segmentInfo = { id: 357149030 /* Info */, data: [
+            { id: 2807729 /* TimestampScale */, data: 1e6 },
+            { id: 19840 /* MuxingApp */, data: "Vani's epic muxer" },
+            { id: 22337 /* WritingApp */, data: "Vani's epic muxer" },
             segmentDuration
           ] };
           this.segmentInfo = segmentInfo;
-          let tracksElement = { id: 374648427, data: [] };
+          let tracksElement = { id: 374648427 /* Tracks */, data: [] };
           this.tracksElement = tracksElement;
           if (this.options.video) {
-            tracksElement.data.push({ id: 174, data: [
-              { id: 215, data: VIDEO_TRACK_NUMBER },
-              { id: 29637, data: VIDEO_TRACK_NUMBER },
-              { id: 131, data: 1 },
-              { id: 134, data: this.options.video.codec },
-              this.options.video.frameRate ? { id: 2352003, data: 1e9 / this.options.video.frameRate } : null,
-              { id: 224, data: [
-                { id: 176, data: this.options.video.width },
-                { id: 186, data: this.options.video.height }
+            tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
+              { id: 215 /* TrackNumber */, data: VIDEO_TRACK_NUMBER },
+              { id: 29637 /* TrackUID */, data: VIDEO_TRACK_NUMBER },
+              { id: 131 /* TrackType */, data: 1 },
+              { id: 134 /* CodecID */, data: this.options.video.codec },
+              this.options.video.frameRate ? { id: 2352003 /* DefaultDuration */, data: 1e9 / this.options.video.frameRate } : null,
+              { id: 224 /* Video */, data: [
+                { id: 176 /* PixelWidth */, data: this.options.video.width },
+                { id: 186 /* PixelHeight */, data: this.options.video.height }
               ] }
             ].filter(Boolean) });
           }
           if (this.options.audio) {
-            this.audioCodecPrivate = { id: 236, size: 4, data: new Uint8Array(2 ** 11) };
-            tracksElement.data.push({ id: 174, data: [
-              { id: 215, data: AUDIO_TRACK_NUMBER },
-              { id: 29637, data: AUDIO_TRACK_NUMBER },
-              { id: 131, data: 2 },
-              { id: 134, data: this.options.audio.codec },
+            this.audioCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 11) };
+            tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
+              { id: 215 /* TrackNumber */, data: AUDIO_TRACK_NUMBER },
+              { id: 29637 /* TrackUID */, data: AUDIO_TRACK_NUMBER },
+              { id: 131 /* TrackType */, data: 2 },
+              { id: 134 /* CodecID */, data: this.options.audio.codec },
               this.audioCodecPrivate,
-              { id: 225, data: [
-                { id: 181, data: new EBMLFloat32(this.options.audio.sampleRate) },
-                { id: 159, data: this.options.audio.numberOfChannels },
-                this.options.audio.bitDepth ? { id: 25188, data: this.options.audio.bitDepth } : null
+              { id: 225 /* Audio */, data: [
+                { id: 181 /* SamplingFrequency */, data: new EBMLFloat32(this.options.audio.sampleRate) },
+                { id: 159 /* Channels */, data: this.options.audio.numberOfChannels },
+                this.options.audio.bitDepth ? { id: 25188 /* BitDepth */, data: this.options.audio.bitDepth } : null
               ].filter(Boolean) }
             ] });
           }
-          let segment = { id: 408125543, size: 5, data: [
+          let segment = { id: 408125543 /* Segment */, size: 5, data: [
             seekHead,
             segmentInfo,
             tracksElement
           ] };
           this.segment = segment;
           this.target.writeEBML(segment);
-          this.cues = { id: 475249515, data: [] };
+          this.cues = { id: 475249515 /* Cues */, data: [] };
         }
         addVideoChunk(chunk) {
           this.lastVideoTimestamp = chunk.timestamp;
@@ -324,8 +349,8 @@
             let endPos = this.target.pos;
             this.target.seek(this.target.offsets.get(this.audioCodecPrivate));
             this.audioCodecPrivate = [
-              { id: 25506, size: 4, data: new Uint8Array(meta.decoderConfig.description) },
-              { id: 236, size: 4, data: new Uint8Array(2 ** 11 - 2 - 4 - meta.decoderConfig.description.byteLength) }
+              { id: 25506 /* CodecPrivate */, size: 4, data: new Uint8Array(meta.decoderConfig.description) },
+              { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 11 - 2 - 4 - meta.decoderConfig.description.byteLength) }
             ];
             this.target.writeEBML(this.audioCodecPrivate);
             this.target.seek(endPos);
@@ -343,7 +368,7 @@
           view.setUint8(3, Number(chunk.type === "key") << 7);
           let data = new Uint8Array(chunk.byteLength);
           chunk.copyTo(data);
-          let simpleBlock = { id: 163, data: [
+          let simpleBlock = { id: 163 /* SimpleBlock */, data: [
             prelude,
             data
           ] };
@@ -354,16 +379,16 @@
           if (this.currentCluster) {
             this.finalizeCurrentCluster();
           }
-          this.currentCluster = { id: 524531317, data: [
-            { id: 231, data: timestamp }
+          this.currentCluster = { id: 524531317 /* Cluster */, data: [
+            { id: 231 /* Timestamp */, data: timestamp }
           ] };
           this.target.writeEBML(this.currentCluster);
           this.currentClusterTimestamp = timestamp;
-          this.cues.data.push({ id: 187, data: [
-            { id: 179, data: timestamp },
-            { id: 183, data: [
-              { id: 247, data: VIDEO_TRACK_NUMBER },
-              { id: 241, data: this.target.offsets.get(this.currentCluster) - (this.target.offsets.get(this.segment) + 8) }
+          this.cues.data.push({ id: 187 /* CuePoint */, data: [
+            { id: 179 /* CueTime */, data: timestamp },
+            { id: 183 /* CueTrackPositions */, data: [
+              { id: 247 /* CueTrack */, data: VIDEO_TRACK_NUMBER },
+              { id: 241 /* CueClusterPosition */, data: this.target.offsets.get(this.currentCluster) - (this.target.offsets.get(this.segment) + 8) }
             ] }
           ] });
         }
