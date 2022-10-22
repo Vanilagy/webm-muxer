@@ -144,7 +144,7 @@ abstract class WriteTarget {
 				this.writeEBMLVarInt(data.data.length);
 				this.writeString(data.data);
 			} else if (data.data instanceof Uint8Array) {
-				this.writeEBMLVarInt(data.data.byteLength);
+				this.writeEBMLVarInt(data.data.byteLength, data.size);
 				this.write(data.data);
 			} else if (data.data instanceof EBMLFloat32) {
 				this.writeEBMLVarInt(4);
@@ -158,14 +158,27 @@ abstract class WriteTarget {
 }
 
 class ArrayBufferWriteTarget extends WriteTarget {
-	buffer = new ArrayBuffer(2**24);
+	buffer = new ArrayBuffer(2**16);
 	bytes = new Uint8Array(this.buffer);
 
 	constructor() {
 		super();
 	}
 
+	ensureSize(size: number) {
+		while (this.buffer.byteLength < size) {
+			let newBuffer = new ArrayBuffer(2 * this.buffer.byteLength);
+			let newBytes = new Uint8Array(newBuffer);
+			newBytes.set(this.bytes, 0);
+
+			this.buffer = newBuffer;
+			this.bytes = newBytes;
+		}
+	}
+
 	write(data: Uint8Array) {
+		this.ensureSize(this.pos + data.byteLength);
+
 		this.bytes.set(data, this.pos);
 		this.pos += data.byteLength;
 	}
@@ -175,7 +188,28 @@ class ArrayBufferWriteTarget extends WriteTarget {
 	}
 
 	finalize() {
-		return this.bytes.slice(0, this.pos);
+		this.ensureSize(this.pos);
+		return this.buffer.slice(0, this.pos);
+	}
+}
+
+class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
+	stream: FileSystemWritableFileStream;
+
+	constructor(stream: FileSystemWritableFileStream) {
+		super();
+
+		this.stream = stream;
+	}
+
+	write(data: Uint8Array) {
+		data = data.slice(); // Need to clone the underlying buffer (and make sure it doesn't change anymore) for the file system API to work correctly
+		this.stream.write({ type: 'write', data: data.slice(), position: this.pos });
+		this.pos += data.byteLength;
+	}
+
+	seek(newPos: number) {
+		this.pos = newPos;
 	}
 }
 
@@ -214,29 +248,19 @@ const measureEBMLVarInt = (value: number) => {
 	}
 };
 
-const saveFile = (blob: Blob, filename = 'unnamed.webm') => {
-	const a = document.createElement('a');
-	document.body.appendChild(a);
-	const url = window.URL.createObjectURL(blob);
-	a.href = url;
-	a.download = filename;
-	a.click();
-	setTimeout(() => {
-		window.URL.revokeObjectURL(url);
-		document.body.removeChild(a);
-	}, 0);
-};
-
 interface WebMWriterOptions {
+	target: 'buffer' | FileSystemWritableFileStream,
 	video?: {
 		codec: string,
 		width: number,
 		height: number
+		frameRate?: number
 	},
 	audio?: {
 		codec: string,
 		numberOfChannels: number,
-		sampleRate: number
+		sampleRate: number,
+		bitDepth?: number
 	}
 }
 
@@ -249,7 +273,7 @@ class WebMWriter {
 	currentCluster: EBMLElement;
 	currentClusterTimestamp: number;
 	segmentDuration: EBMLElement;
-	audioCodecPrivate: EBMLElement;
+	audioCodecPrivate: EBML;
 	cues: EBMLElement;
 	seekHead: {
 		id: number;
@@ -274,8 +298,13 @@ class WebMWriter {
 	lastAudioTimestamp = 0;
 
 	constructor(options: WebMWriterOptions) {
-		this.target = new ArrayBufferWriteTarget();
 		this.options = options;
+
+		if (options.target === 'buffer') {
+			this.target = new ArrayBufferWriteTarget();
+		} else {
+			this.target = new FileSystemWritableFileStreamWriteTarget(options.target);
+		}
 
 		this.writeHeader();
 	}
@@ -328,14 +357,15 @@ class WebMWriter {
 				{ id: 0x73c5, data: VIDEO_TRACK_NUMBER },
 				{ id: 0x83, data: 1 },
 				{ id: 0x86, data: this.options.video.codec },
+				(this.options.video.frameRate ? { id: 0x23E383, data: 1e9/this.options.video.frameRate } : null),
 				{ id: 0xe0, data: [
 					{ id: 0xb0, data: this.options.video.width },
 					{ id: 0xba, data: this.options.video.height }
 				] }
-			] });
+			].filter(Boolean) });
 		}
 		if (this.options.audio) {
-			this.audioCodecPrivate = { id: 0x63a2, data: new Uint8Array(19) };
+			this.audioCodecPrivate = { id: 0xec, size: 4, data: new Uint8Array(2**11) }; // Reserve 2 kiB for the CodecPrivate element
 
 			tracksElement.data.push({ id: 0xae, data: [
 				{ id: 0xd7, data: AUDIO_TRACK_NUMBER },
@@ -345,8 +375,9 @@ class WebMWriter {
 				this.audioCodecPrivate,
 				{ id: 0xe1, data: [
 					{ id: 0xb5, data: new EBMLFloat32(this.options.audio.sampleRate) },
-					{ id: 0x9f, data: this.options.audio.numberOfChannels}
-				] }
+					{ id: 0x9f, data: this.options.audio.numberOfChannels},
+					(this.options.audio.bitDepth ? { id: 0x6264, data: this.options.audio.bitDepth } : null)
+				].filter(Boolean) }
 			] });
 		}
 
@@ -398,9 +429,14 @@ class WebMWriter {
 		}
 
 		if (meta?.decoderConfig) {
-			this.audioCodecPrivate.data = new Uint8Array(meta.decoderConfig.description as any);
 			let endPos = this.target.pos;
 			this.target.seek(this.target.offsets.get(this.audioCodecPrivate));
+
+			this.audioCodecPrivate = [
+				{ id: 0x63a2, size: 4, data: new Uint8Array(meta.decoderConfig.description as any) },
+				{ id: 0xec, size: 4, data: new Uint8Array(2**11 - 2 - 4 - meta.decoderConfig.description.byteLength) }
+			];
+			
 			this.target.writeEBML(this.audioCodecPrivate);
 			this.target.seek(endPos);
 		}
@@ -487,84 +523,17 @@ class WebMWriter {
 		this.target.writeEBML(this.seekHead);
 
 		this.target.seek(endPos);
+
+		if (this.target instanceof ArrayBufferWriteTarget) {
+			return this.target.finalize();
+		}
+		return null;
 	}
 }
 
-(async () => {
-	let sampleRate = 48000;
-
-	let writer = new WebMWriter({
-		video: {
-			codec: 'V_VP9',
-			width: 1280,
-			height: 720
-		},
-		audio: {
-			codec: 'A_OPUS',
-			numberOfChannels: 1,
-			sampleRate
-		}
-	});
-	
-	let canvas = document.createElement('canvas');
-	canvas.setAttribute('width', '1280');
-	canvas.setAttribute('height', '720');
-	let ctx = canvas.getContext('2d');
-	
-	let videoEncoder = new VideoEncoder({
-		output: chunk => writer.addVideoChunk(chunk),
-		error: e => console.error(e)
-	});
-	videoEncoder.configure({
-		codec: 'vp09.00.10.08',
-		width: 1280, 
-		height: 720,
-		bitrate: 1e6
-	});
-
-	let audioEncoder = new AudioEncoder({
-		output: (chunk, meta) => writer.addAudioChunk(chunk, meta),
-		error: e => console.error(e)
-	});
-	audioEncoder.configure({
-		codec: 'opus',
-		numberOfChannels: 1,
-		sampleRate,
-		bitrate: 32000,
-	});
-
-	let audioContext = new AudioContext();
-	let audioBuffer = await audioContext.decodeAudioData(await (await fetch('./CantinaBand60.wav')).arrayBuffer());
-	let length = 5;
-	let data = new Float32Array(length * sampleRate);
-	data.set(audioBuffer.getChannelData(0).subarray(0, data.length), 0);
-
-	let audioData = new AudioData({
-		format: 'f32',
-		sampleRate,
-		numberOfFrames: length * sampleRate,
-		numberOfChannels: 1,
-		timestamp: 0,
-		data: data
-	});
-	audioEncoder.encode(audioData);
-	audioData.close();
-	
-	for (let i = 0; i < length * 5; i++) {
-		ctx.fillStyle = ['red', 'lime', 'blue', 'yellow'][Math.floor(Math.random() * 4)];
-		ctx.fillRect(Math.random() * 1280, Math.random() * 720, Math.random() * 1280, Math.random() * 720);
-
-		let videoFrame = new VideoFrame(canvas, { timestamp: i * 1000000/5 });
-		videoEncoder.encode(videoFrame);
-		videoFrame.close();
-	}
-
-	await Promise.allSettled([videoEncoder.flush(), audioEncoder.flush()]);
-
-	writer.finalize();
-	
-	let buffer = (writer.target as ArrayBufferWriteTarget).finalize();
-	
-	console.log(buffer);
-	saveFile(new Blob([buffer]));
-})();
+if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
+	module.exports = WebMWriter;
+}
+if (typeof globalThis !== 'undefined') {
+	(globalThis as any).WebMWriter = WebMWriter;
+}
