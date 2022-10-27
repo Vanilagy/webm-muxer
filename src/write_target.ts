@@ -28,8 +28,7 @@ export abstract class WriteTarget {
 		// Each case falls through:
 		switch (width) {
 			case 5:
-			this.writeU8(
-				Math.floor(value / 2**32));  // Need to use division to access >32 bits of floating point var
+				this.writeU8(Math.floor(value / 2**32));  // Need to use division to access >32 bits of floating point var
 			case 4:
 				this.writeU8(value >> 24);
 			case 3:

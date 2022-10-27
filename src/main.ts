@@ -3,6 +3,8 @@ import { WriteTarget, ArrayBufferWriteTarget, FileSystemWritableFileStreamWriteT
 
 const VIDEO_TRACK_NUMBER = 1;
 const AUDIO_TRACK_NUMBER = 2;
+const VIDEO_TRACK_TYPE = 1;
+const AUDIO_TRACK_TYPE = 2;
 const MAX_CHUNK_LENGTH_MS = 32_000;
 
 interface WebMWriterOptions {
@@ -30,6 +32,8 @@ class WebMWriter {
 	currentCluster: EBMLElement;
 	currentClusterTimestamp: number;
 	segmentDuration: EBMLElement;
+	colourElement: EBMLElement;
+	videoCodecPrivate: EBML;
 	audioCodecPrivate: EBML;
 	cues: EBMLElement;
 	seekHead: {
@@ -113,25 +117,38 @@ class WebMWriter {
 		this.tracksElement = tracksElement;
 
 		if (this.options.video) {
+			this.videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(2**11) }; // Reserve 2 kiB for the CodecPrivate element
+
+			let colourElement = { id: EBMLId.Colour, data: [
+				// All initially unspecified
+				{ id: EBMLId.MatrixCoefficients, data: 2 },
+				{ id: EBMLId.TransferCharacteristics, data: 2 },
+				{ id: EBMLId.Primaries, data: 2 },
+				{ id: EBMLId.Range, data: 0 }
+			] };
+			this.colourElement = colourElement;
+
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: VIDEO_TRACK_NUMBER },
-				{ id: EBMLId.TrackType, data: 1 },
+				{ id: EBMLId.TrackType, data: VIDEO_TRACK_TYPE },
 				{ id: EBMLId.CodecID, data: this.options.video.codec },
+				this.videoCodecPrivate,
 				(this.options.video.frameRate ? { id: EBMLId.DefaultDuration, data: 1e9/this.options.video.frameRate } : null),
 				{ id: EBMLId.Video, data: [
 					{ id: EBMLId.PixelWidth, data: this.options.video.width },
-					{ id: EBMLId.PixelHeight, data: this.options.video.height }
+					{ id: EBMLId.PixelHeight, data: this.options.video.height },
+					colourElement
 				] }
 			].filter(Boolean) });
 		}
 		if (this.options.audio) {
-			this.audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(2**11) }; // Reserve 2 kiB for the CodecPrivate element
+			this.audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(2**11) };
 
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: AUDIO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: AUDIO_TRACK_NUMBER },
-				{ id: EBMLId.TrackType, data: 2 },
+				{ id: EBMLId.TrackType, data: AUDIO_TRACK_TYPE },
 				{ id: EBMLId.CodecID, data: this.options.audio.codec },
 				this.audioCodecPrivate,
 				{ id: EBMLId.Audio, data: [
@@ -154,7 +171,7 @@ class WebMWriter {
 		this.cues = { id: EBMLId.Cues, data: [] };
 	}
 
-	addVideoChunk(chunk: EncodedVideoChunk) {
+	addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata) {
 		this.lastVideoTimestamp = chunk.timestamp;
 
 		while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= chunk.timestamp) {
@@ -166,6 +183,41 @@ class WebMWriter {
 			this.writeSimpleBlock(chunk);
 		} else {
 			this.videoChunkQueue.push(chunk);
+		}
+
+		if (meta.decoderConfig) {
+			if (meta.decoderConfig.colorSpace) {
+				let colorSpace = meta.decoderConfig.colorSpace;
+
+				this.colourElement.data = [
+					{ id: EBMLId.MatrixCoefficients, data: {
+						'rgb': 1,
+						'bt709': 1,
+						'bt470bg': 5,
+						'smpte170m': 6
+					}[colorSpace.matrix] },
+					{ id: EBMLId.TransferCharacteristics, data: {
+						'bt709': 1,
+						'smpte170m': 6,
+						'iec61966-2-1': 13
+					}[colorSpace.transfer] },
+					{ id: EBMLId.Primaries, data: {
+						'bt709': 1,
+						'bt470bg': 5,
+						'smpte170m': 6
+					}[colorSpace.primaries] },
+					{ id: EBMLId.Range, data: [1, 2][Number(colorSpace.fullRange)] }
+				];
+
+				let endPos = this.target.pos;
+				this.target.seek(this.target.offsets.get(this.colourElement));
+				this.target.writeEBML(this.colourElement);
+				this.target.seek(endPos);
+			}
+
+			if (meta.decoderConfig.description) {
+				this.writeCodecPrivate(this.videoCodecPrivate, meta.decoderConfig.description);
+			}
 		}
 	}
 	
@@ -183,17 +235,8 @@ class WebMWriter {
 			this.audioChunkQueue.push(chunk);
 		}
 
-		if (meta?.decoderConfig) {
-			let endPos = this.target.pos;
-			this.target.seek(this.target.offsets.get(this.audioCodecPrivate));
-
-			this.audioCodecPrivate = [
-				{ id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(meta.decoderConfig.description as any) },
-				{ id: EBMLId.Void, size: 4, data: new Uint8Array(2**11 - 2 - 4 - meta.decoderConfig.description.byteLength) }
-			];
-			
-			this.target.writeEBML(this.audioCodecPrivate);
-			this.target.seek(endPos);
+		if (meta.decoderConfig) {
+			this.writeCodecPrivate(this.audioCodecPrivate, meta.decoderConfig.description);
 		}
 	}
 
@@ -225,6 +268,19 @@ class WebMWriter {
 		this.target.writeEBML(simpleBlock);
 
 		this.duration = Math.max(this.duration, msTime);
+	}
+
+	writeCodecPrivate(element: EBML, data: AllowSharedBufferSource) {
+		let endPos = this.target.pos;
+		this.target.seek(this.target.offsets.get(element));
+
+		element = [
+			{ id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) },
+			{ id: EBMLId.Void, size: 4, data: new Uint8Array(2**11 - 2 - 4 - data.byteLength) }
+		];
+		
+		this.target.writeEBML(element);
+		this.target.seek(endPos);
 	}
 
 	createNewCluster(timestamp: number) {

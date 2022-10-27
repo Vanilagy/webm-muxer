@@ -37,7 +37,7 @@
 	let ctx = canvas.getContext('2d');
 
 	let videoEncoder = new VideoEncoder({
-		output: chunk => writer.addVideoChunk(chunk),
+		output: (chunk, meta) => writer.addVideoChunk(chunk, meta),
 		error: e => console.error(e)
 	});
 	videoEncoder.configure({
