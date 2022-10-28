@@ -9,11 +9,6 @@ export abstract class WriteTarget {
 	abstract write(data: Uint8Array): void;
 	abstract seek(newPos: number): void;
 
-	writeU8(value: number) {
-		this.helperView.setUint8(0, value);
-		this.write(this.helper.subarray(0, 1));
-	}
-
 	writeFloat32(value: number) {
 		this.helperView.setFloat32(0, value, false);
 		this.write(this.helper.subarray(0, 4));
@@ -25,43 +20,49 @@ export abstract class WriteTarget {
 	}
 
 	writeUnsignedInt(value: number, width: number = measureUnsignedInt(value)) {
+		let pos = 0;
+
 		// Each case falls through:
 		switch (width) {
 			case 5:
-				this.writeU8(Math.floor(value / 2**32));  // Need to use division to access >32 bits of floating point var
+				this.helperView.setUint8(pos++, Math.floor(value / 2**32)); // Need to use division to access >32 bits of floating point var
 			case 4:
-				this.writeU8(value >> 24);
+				this.helperView.setUint8(pos++, value >> 24);
 			case 3:
-				this.writeU8(value >> 16);
+				this.helperView.setUint8(pos++, value >> 16);
 			case 2:
-				this.writeU8(value >> 8);
+				this.helperView.setUint8(pos++, value >> 8);
 			case 1:
-				this.writeU8(value);
+				this.helperView.setUint8(pos++, value);
 				break;
 			default:
 				throw new Error('Bad UINT size ' + width);
 		}
+
+		this.write(this.helper.subarray(0, pos));
 	};
 
 	writeEBMLVarInt(value: number, width: number = measureEBMLVarInt(value)) {
+		let pos = 0;
+
 		switch (width) {
 			case 1:
-				this.writeU8((1 << 7) | value);
+				this.helperView.setUint8(pos++, (1 << 7) | value);
 				break;
 			case 2:
-				this.writeU8((1 << 6) | (value >> 8));
-				this.writeU8(value);
+				this.helperView.setUint8(pos++, (1 << 6) | (value >> 8));
+				this.helperView.setUint8(pos++, value);
 				break;
 			case 3:
-				this.writeU8((1 << 5) | (value >> 16));
-				this.writeU8(value >> 8);
-				this.writeU8(value);
+				this.helperView.setUint8(pos++, (1 << 5) | (value >> 16));
+				this.helperView.setUint8(pos++, value >> 8);
+				this.helperView.setUint8(pos++, value);
 				break;
 			case 4:
-				this.writeU8((1 << 4) | (value >> 24));
-				this.writeU8(value >> 16);
-				this.writeU8(value >> 8);
-				this.writeU8(value);
+				this.helperView.setUint8(pos++, (1 << 4) | (value >> 24));
+				this.helperView.setUint8(pos++, value >> 16);
+				this.helperView.setUint8(pos++, value >> 8);
+				this.helperView.setUint8(pos++, value);
 				break;
 			case 5:
 				/*
@@ -69,15 +70,17 @@ export abstract class WriteTarget {
 				* operations, so we need to do a division by 2^32 instead of a
 				* right-shift of 32 to retain those top 3 bits
 				*/
-				this.writeU8((1 << 3) | ((value / 4294967296) & 0x7));
-				this.writeU8(value >> 24);
-				this.writeU8(value >> 16);
-				this.writeU8(value >> 8);
-				this.writeU8(value);
+				this.helperView.setUint8(pos++, (1 << 3) | ((value / 4294967296) & 0x7));
+				this.helperView.setUint8(pos++, value >> 24);
+				this.helperView.setUint8(pos++, value >> 16);
+				this.helperView.setUint8(pos++, value >> 8);
+				this.helperView.setUint8(pos++, value);
 				break;
 			default:
 				throw new Error('Bad EBML VINT size ' + width);
 		}
+
+		this.write(this.helper.subarray(0, pos));
 	};
 
 	writeString(str: string) {
@@ -130,6 +133,41 @@ export abstract class WriteTarget {
 	}
 }
 
+const measureUnsignedInt = (value: number) => {
+	// Force to 32-bit unsigned integer
+	if (value < (1 << 8)) {
+		return 1;
+	} else if (value < (1 << 16)) {
+		return 2;
+	} else if (value < (1 << 24)) {
+		return 3;
+	} else if (value < 2**32) {
+		return 4;
+	} else {
+		return 5;
+	}
+};
+
+const measureEBMLVarInt = (value: number) => {
+	if (value < (1 << 7) - 1) {
+		/* Top bit is set, leaving 7 bits to hold the integer, but we can't store
+		* 127 because "all bits set to one" is a reserved value. Same thing for the
+		* other cases below:
+		*/
+		return 1;
+	} else if (value < (1 << 14) - 1) {
+		return 2;
+	} else if (value < (1 << 21) - 1) {
+		return 3;
+	} else if (value < (1 << 28) - 1) {
+		return 4;
+	} else if (value < 2**35-1) {  // (can address 32GB)
+		return 5;
+	} else {
+		throw new Error('EBML VINT size not supported ' + value);
+	}
+};
+
 export class ArrayBufferWriteTarget extends WriteTarget {
 	buffer = new ArrayBuffer(2**16);
 	bytes = new Uint8Array(this.buffer);
@@ -166,8 +204,23 @@ export class ArrayBufferWriteTarget extends WriteTarget {
 	}
 }
 
+const FILE_CHUNK_SIZE = 2**24;
+
+interface FileChunk {
+	start: number,
+	written: FileChunkSection[],
+	data: Uint8Array
+}
+
+interface FileChunkSection {
+	start: number,
+	end: number
+}
+
 export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 	stream: FileSystemWritableFileStream;
+	chunks: FileChunk[] = [];
+	toFlush: FileChunk[] = [];
 
 	constructor(stream: FileSystemWritableFileStream) {
 		super();
@@ -176,47 +229,98 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 	}
 
 	write(data: Uint8Array) {
-		data = data.slice(); // Need to clone the underlying buffer (and make sure it doesn't change anymore) for the file system API to work correctly
-		this.stream.write({ type: 'write', data: data.slice(), position: this.pos });
+		this.writeDataIntoChunks(data, this.pos);
+		this.flushChunks();
+
 		this.pos += data.byteLength;
+	}
+
+	writeDataIntoChunks(data: Uint8Array, position: number) {
+		let chunkIndex = this.chunks.findIndex(x => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
+		if (chunkIndex === -1) chunkIndex = this.createChunk(position);
+		let chunk = this.chunks[chunkIndex];
+
+		let relativePosition = position - chunk.start;
+		let toWrite = data.subarray(0, Math.min(FILE_CHUNK_SIZE - relativePosition, data.byteLength));
+		chunk.data.set(toWrite, relativePosition);
+
+		let section: FileChunkSection = {
+			start: relativePosition,
+			end: relativePosition + toWrite.byteLength
+		};
+		insertSectionIntoFileChunk(chunk, section);
+
+		if (chunk.written[0].start === 0 && chunk.written[0].end === FILE_CHUNK_SIZE) {
+			this.toFlush.push(chunk);
+			this.chunks.splice(chunkIndex, 1);
+		}
+
+		if (toWrite.byteLength < data.byteLength) {
+			this.writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
+		}
+	}
+
+	createChunk(includesPosition: number) {
+		let start = Math.floor(includesPosition / FILE_CHUNK_SIZE) * FILE_CHUNK_SIZE;
+		let chunk: FileChunk = {
+			start,
+			data: new Uint8Array(FILE_CHUNK_SIZE),
+			written: []
+		};
+		this.chunks.push(chunk);
+
+		return this.chunks.length - 1;
+	}
+
+	flushChunks() {
+		if (this.toFlush.length > 0) {
+			for (let chunk of this.toFlush) {
+				for (let section of chunk.written) {
+					this.stream.write({
+						type: 'write',
+						data: chunk.data.subarray(section.start, section.end),
+						position: chunk.start + section.start
+					});
+				}
+			}
+			this.toFlush.length = 0;
+		}
 	}
 
 	seek(newPos: number) {
 		this.pos = newPos;
 	}
+
+	finalize() {
+		this.toFlush.push(...this.chunks);
+		this.chunks.length = 0;
+
+		this.flushChunks();
+	}
 }
 
-const measureUnsignedInt = (value: number) => {
-	// Force to 32-bit unsigned integer
-	if (value < (1 << 8)) {
-		return 1;
-	} else if (value < (1 << 16)) {
-		return 2;
-	} else if (value < (1 << 24)) {
-		return 3;
-	} else if (value < 2**32) {
-		return 4;
-	} else {
-		return 5;
-	}
-};
+const insertSectionIntoFileChunk = (chunk: FileChunk, section: FileChunkSection) => {
+	let low = 0;
+	let high = chunk.written.length - 1;
+	let index = -1;
 
-const measureEBMLVarInt = (value: number) => {
-	if (value < (1 << 7) - 1) {
-		/* Top bit is set, leaving 7 bits to hold the integer, but we can't store
-		* 127 because "all bits set to one" is a reserved value. Same thing for the
-		* other cases below:
-		*/
-		return 1;
-	} else if (value < (1 << 14) - 1) {
-		return 2;
-	} else if (value < (1 << 21) - 1) {
-		return 3;
-	} else if (value < (1 << 28) - 1) {
-		return 4;
-	} else if (value < 2**35-1) {  // (can address 32GB)
-		return 5;
-	} else {
-		throw new Error('EBML VINT size not supported ' + value);
+	// Do a binary search to find the last section with a start not larger than `section`'s start
+	while (low <= high) {
+		let mid = Math.floor(low + (high - low + 1) / 2);
+
+		if (chunk.written[mid].start <= section.start) {
+			low = mid + 1;
+			index = mid;
+		} else {
+			high = mid - 1;
+		}
+	}
+
+	chunk.written.splice(index + 1, 0, section);
+	if (index === -1 || chunk.written[index].end < section.start) index++;
+
+	while (index < chunk.written.length - 1 && chunk.written[index].end >= chunk.written[index + 1].start) {
+		chunk.written[index].end = Math.max(chunk.written[index].end, chunk.written[index + 1].end);
+		chunk.written.splice(index + 1, 1);
 	}
 };

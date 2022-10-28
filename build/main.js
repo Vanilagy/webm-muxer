@@ -27,7 +27,7 @@
   });
 
   // src/write_target.ts
-  var WriteTarget, ArrayBufferWriteTarget, FileSystemWritableFileStreamWriteTarget, measureUnsignedInt, measureEBMLVarInt;
+  var WriteTarget, measureUnsignedInt, measureEBMLVarInt, ArrayBufferWriteTarget, FILE_CHUNK_SIZE, FileSystemWritableFileStreamWriteTarget, insertSectionIntoFileChunk;
   var init_write_target = __esm({
     "src/write_target.ts"() {
       "use strict";
@@ -39,10 +39,6 @@
           this.helperView = new DataView(this.helper.buffer);
           this.offsets = /* @__PURE__ */ new WeakMap();
         }
-        writeU8(value) {
-          this.helperView.setUint8(0, value);
-          this.write(this.helper.subarray(0, 1));
-        }
         writeFloat32(value) {
           this.helperView.setFloat32(0, value, false);
           this.write(this.helper.subarray(0, 4));
@@ -52,52 +48,56 @@
           this.write(this.helper);
         }
         writeUnsignedInt(value, width = measureUnsignedInt(value)) {
+          let pos = 0;
           switch (width) {
             case 5:
-              this.writeU8(Math.floor(value / 2 ** 32));
+              this.helperView.setUint8(pos++, Math.floor(value / 2 ** 32));
             case 4:
-              this.writeU8(value >> 24);
+              this.helperView.setUint8(pos++, value >> 24);
             case 3:
-              this.writeU8(value >> 16);
+              this.helperView.setUint8(pos++, value >> 16);
             case 2:
-              this.writeU8(value >> 8);
+              this.helperView.setUint8(pos++, value >> 8);
             case 1:
-              this.writeU8(value);
+              this.helperView.setUint8(pos++, value);
               break;
             default:
               throw new Error("Bad UINT size " + width);
           }
+          this.write(this.helper.subarray(0, pos));
         }
         writeEBMLVarInt(value, width = measureEBMLVarInt(value)) {
+          let pos = 0;
           switch (width) {
             case 1:
-              this.writeU8(1 << 7 | value);
+              this.helperView.setUint8(pos++, 1 << 7 | value);
               break;
             case 2:
-              this.writeU8(1 << 6 | value >> 8);
-              this.writeU8(value);
+              this.helperView.setUint8(pos++, 1 << 6 | value >> 8);
+              this.helperView.setUint8(pos++, value);
               break;
             case 3:
-              this.writeU8(1 << 5 | value >> 16);
-              this.writeU8(value >> 8);
-              this.writeU8(value);
+              this.helperView.setUint8(pos++, 1 << 5 | value >> 16);
+              this.helperView.setUint8(pos++, value >> 8);
+              this.helperView.setUint8(pos++, value);
               break;
             case 4:
-              this.writeU8(1 << 4 | value >> 24);
-              this.writeU8(value >> 16);
-              this.writeU8(value >> 8);
-              this.writeU8(value);
+              this.helperView.setUint8(pos++, 1 << 4 | value >> 24);
+              this.helperView.setUint8(pos++, value >> 16);
+              this.helperView.setUint8(pos++, value >> 8);
+              this.helperView.setUint8(pos++, value);
               break;
             case 5:
-              this.writeU8(1 << 3 | value / 4294967296 & 7);
-              this.writeU8(value >> 24);
-              this.writeU8(value >> 16);
-              this.writeU8(value >> 8);
-              this.writeU8(value);
+              this.helperView.setUint8(pos++, 1 << 3 | value / 4294967296 & 7);
+              this.helperView.setUint8(pos++, value >> 24);
+              this.helperView.setUint8(pos++, value >> 16);
+              this.helperView.setUint8(pos++, value >> 8);
+              this.helperView.setUint8(pos++, value);
               break;
             default:
               throw new Error("Bad EBML VINT size " + width);
           }
+          this.write(this.helper.subarray(0, pos));
         }
         writeString(str) {
           this.write(new Uint8Array(str.split("").map((x) => x.charCodeAt(0))));
@@ -143,6 +143,34 @@
           }
         }
       };
+      measureUnsignedInt = (value) => {
+        if (value < 1 << 8) {
+          return 1;
+        } else if (value < 1 << 16) {
+          return 2;
+        } else if (value < 1 << 24) {
+          return 3;
+        } else if (value < 2 ** 32) {
+          return 4;
+        } else {
+          return 5;
+        }
+      };
+      measureEBMLVarInt = (value) => {
+        if (value < (1 << 7) - 1) {
+          return 1;
+        } else if (value < (1 << 14) - 1) {
+          return 2;
+        } else if (value < (1 << 21) - 1) {
+          return 3;
+        } else if (value < (1 << 28) - 1) {
+          return 4;
+        } else if (value < 2 ** 35 - 1) {
+          return 5;
+        } else {
+          throw new Error("EBML VINT size not supported " + value);
+        }
+      };
       ArrayBufferWriteTarget = class extends WriteTarget {
         constructor() {
           super();
@@ -171,46 +199,92 @@
           return this.buffer.slice(0, this.pos);
         }
       };
+      FILE_CHUNK_SIZE = 2 ** 24;
       FileSystemWritableFileStreamWriteTarget = class extends WriteTarget {
         constructor(stream) {
           super();
+          this.chunks = [];
+          this.toFlush = [];
           this.stream = stream;
         }
         write(data) {
-          data = data.slice();
-          this.stream.write({ type: "write", data: data.slice(), position: this.pos });
+          this.writeDataIntoChunks(data, this.pos);
+          this.flushChunks();
           this.pos += data.byteLength;
+        }
+        writeDataIntoChunks(data, position) {
+          let chunkIndex = this.chunks.findIndex((x) => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
+          if (chunkIndex === -1)
+            chunkIndex = this.createChunk(position);
+          let chunk = this.chunks[chunkIndex];
+          let relativePosition = position - chunk.start;
+          let toWrite = data.subarray(0, Math.min(FILE_CHUNK_SIZE - relativePosition, data.byteLength));
+          chunk.data.set(toWrite, relativePosition);
+          let section = {
+            start: relativePosition,
+            end: relativePosition + toWrite.byteLength
+          };
+          insertSectionIntoFileChunk(chunk, section);
+          if (chunk.written[0].start === 0 && chunk.written[0].end === FILE_CHUNK_SIZE) {
+            this.toFlush.push(chunk);
+            this.chunks.splice(chunkIndex, 1);
+          }
+          if (toWrite.byteLength < data.byteLength) {
+            this.writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
+          }
+        }
+        createChunk(includesPosition) {
+          let start = Math.floor(includesPosition / FILE_CHUNK_SIZE) * FILE_CHUNK_SIZE;
+          let chunk = {
+            start,
+            data: new Uint8Array(FILE_CHUNK_SIZE),
+            written: []
+          };
+          this.chunks.push(chunk);
+          return this.chunks.length - 1;
+        }
+        flushChunks() {
+          if (this.toFlush.length > 0) {
+            for (let chunk of this.toFlush) {
+              for (let section of chunk.written) {
+                this.stream.write({
+                  type: "write",
+                  data: chunk.data.subarray(section.start, section.end),
+                  position: chunk.start + section.start
+                });
+              }
+            }
+            this.toFlush.length = 0;
+          }
         }
         seek(newPos) {
           this.pos = newPos;
         }
-      };
-      measureUnsignedInt = (value) => {
-        if (value < 1 << 8) {
-          return 1;
-        } else if (value < 1 << 16) {
-          return 2;
-        } else if (value < 1 << 24) {
-          return 3;
-        } else if (value < 2 ** 32) {
-          return 4;
-        } else {
-          return 5;
+        finalize() {
+          this.toFlush.push(...this.chunks);
+          this.chunks.length = 0;
+          this.flushChunks();
         }
       };
-      measureEBMLVarInt = (value) => {
-        if (value < (1 << 7) - 1) {
-          return 1;
-        } else if (value < (1 << 14) - 1) {
-          return 2;
-        } else if (value < (1 << 21) - 1) {
-          return 3;
-        } else if (value < (1 << 28) - 1) {
-          return 4;
-        } else if (value < 2 ** 35 - 1) {
-          return 5;
-        } else {
-          throw new Error("EBML VINT size not supported " + value);
+      insertSectionIntoFileChunk = (chunk, section) => {
+        let low = 0;
+        let high = chunk.written.length - 1;
+        let index = -1;
+        while (low <= high) {
+          let mid = Math.floor(low + (high - low + 1) / 2);
+          if (chunk.written[mid].start <= section.start) {
+            low = mid + 1;
+            index = mid;
+          } else {
+            high = mid - 1;
+          }
+        }
+        chunk.written.splice(index + 1, 0, section);
+        if (index === -1 || chunk.written[index].end < section.start)
+          index++;
+        while (index < chunk.written.length - 1 && chunk.written[index].end >= chunk.written[index + 1].start) {
+          chunk.written[index].end = Math.max(chunk.written[index].end, chunk.written[index + 1].end);
+          chunk.written.splice(index + 1, 1);
         }
       };
     }
@@ -282,7 +356,7 @@
           let tracksElement = { id: 374648427 /* Tracks */, data: [] };
           this.tracksElement = tracksElement;
           if (this.options.video) {
-            this.videoCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 11) };
+            this.videoCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 12) };
             let colourElement = { id: 21936 /* Colour */, data: [
               { id: 21937 /* MatrixCoefficients */, data: 2 },
               { id: 21946 /* TransferCharacteristics */, data: 2 },
@@ -305,7 +379,7 @@
             ].filter(Boolean) });
           }
           if (this.options.audio) {
-            this.audioCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 11) };
+            this.audioCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 12) };
             tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
               { id: 215 /* TrackNumber */, data: AUDIO_TRACK_NUMBER },
               { id: 29637 /* TrackUID */, data: AUDIO_TRACK_NUMBER },
@@ -410,7 +484,7 @@
           this.target.seek(this.target.offsets.get(element));
           element = [
             { id: 25506 /* CodecPrivate */, size: 4, data: new Uint8Array(data) },
-            { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 11 - 2 - 4 - data.byteLength) }
+            { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 12 - 2 - 4 - data.byteLength) }
           ];
           this.target.writeEBML(element);
           this.target.seek(endPos);
@@ -461,6 +535,8 @@
           this.target.seek(endPos);
           if (this.target instanceof ArrayBufferWriteTarget) {
             return this.target.finalize();
+          } else if (this.target instanceof FileSystemWritableFileStreamWriteTarget) {
+            this.target.finalize();
           }
           return null;
         }

@@ -117,7 +117,7 @@ class WebMWriter {
 		this.tracksElement = tracksElement;
 
 		if (this.options.video) {
-			this.videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(2**11) }; // Reserve 2 kiB for the CodecPrivate element
+			this.videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(2**12) }; // Reserve 4 kiB for the CodecPrivate element
 
 			let colourElement = { id: EBMLId.Colour, data: [
 				// All initially unspecified
@@ -143,7 +143,7 @@ class WebMWriter {
 			].filter(Boolean) });
 		}
 		if (this.options.audio) {
-			this.audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(2**11) };
+			this.audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(2**12) };
 
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: AUDIO_TRACK_NUMBER },
@@ -276,7 +276,7 @@ class WebMWriter {
 
 		element = [
 			{ id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) },
-			{ id: EBMLId.Void, size: 4, data: new Uint8Array(2**11 - 2 - 4 - data.byteLength) }
+			{ id: EBMLId.Void, size: 4, data: new Uint8Array(2**12 - 2 - 4 - data.byteLength) }
 		];
 		
 		this.target.writeEBML(element);
@@ -341,7 +341,10 @@ class WebMWriter {
 
 		if (this.target instanceof ArrayBufferWriteTarget) {
 			return this.target.finalize();
+		} else if (this.target instanceof FileSystemWritableFileStreamWriteTarget) {
+			this.target.finalize();
 		}
+		
 		return null;
 	}
 }
