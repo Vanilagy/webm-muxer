@@ -1,4 +1,4 @@
-declare interface WebMWriterOptions {
+declare interface WebMMuxerOptions {
 	target: 'buffer' | FileSystemWritableFileStream,
 	video?: {
 		codec: string,
@@ -14,8 +14,8 @@ declare interface WebMWriterOptions {
 	}
 }
 
-declare class WebMWriter {
-	constructor(options: WebMWriterOptions);
+declare class WebMMuxer {
+	constructor(options: WebMMuxerOptions);
 
 	addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata): void;	
 	addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata): void;

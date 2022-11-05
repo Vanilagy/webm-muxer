@@ -1,12 +1,23 @@
 import { EBML, EBMLFloat32, EBMLFloat64 } from "./ebml";
 
+/**
+ * A WriteTarget defines a generic target to which data (bytes) can be written in a simple manner. It provides utility 
+ * methods for writing EBML-based data (the format Matroska or its subset, WebM, uses).
+ */
 export abstract class WriteTarget {
 	pos = 0;
 	helper = new Uint8Array(8);
 	helperView = new DataView(this.helper.buffer);
+
+	/**
+	 * Stores the position from the start of the file to where EBML elements have been written. This is used to
+	 * rewrite/edit elements that were already added before, and to measure sizes of things.
+	 */
 	offsets = new WeakMap<EBML, number>();
 	
+	/** Writes the given data to the target, at the current position. */
 	abstract write(data: Uint8Array): void;
+	/** Sets the current position for future writes to a new one. */
 	abstract seek(newPos: number): void;
 
 	writeFloat32(value: number) {
@@ -25,7 +36,8 @@ export abstract class WriteTarget {
 		// Each case falls through:
 		switch (width) {
 			case 5:
-				this.helperView.setUint8(pos++, Math.floor(value / 2**32)); // Need to use division to access >32 bits of floating point var
+				// Need to use division to access >32 bits of floating point var
+				this.helperView.setUint8(pos++, Math.floor(value / 2**32));
 			case 4:
 				this.helperView.setUint8(pos++, value >> 24);
 			case 3:
@@ -65,11 +77,11 @@ export abstract class WriteTarget {
 				this.helperView.setUint8(pos++, value);
 				break;
 			case 5:
-				/*
-				* JavaScript converts its doubles to 32-bit integers for bitwise
-				* operations, so we need to do a division by 2^32 instead of a
-				* right-shift of 32 to retain those top 3 bits
-				*/
+				/**
+				 * JavaScript converts its doubles to 32-bit integers for bitwise
+				 * operations, so we need to do a division by 2^32 instead of a
+				 * right-shift of 32 to retain those top 3 bits
+				 */
 				this.helperView.setUint8(pos++, (1 << 3) | ((value / 4294967296) & 0x7));
 				this.helperView.setUint8(pos++, value >> 24);
 				this.helperView.setUint8(pos++, value >> 16);
@@ -83,6 +95,7 @@ export abstract class WriteTarget {
 		this.write(this.helper.subarray(0, pos));
 	};
 
+	// Assumes the string is ASCII
 	writeString(str: string) {
 		this.write(new Uint8Array(str.split('').map(x => x.charCodeAt(0))));
 	}
@@ -99,11 +112,7 @@ export abstract class WriteTarget {
 
 			this.writeUnsignedInt(data.id); // ID field
 
-			if (typeof data.data === 'number') {
-				let size = data.size ?? measureUnsignedInt(data.data);
-				this.writeEBMLVarInt(size);
-				this.writeUnsignedInt(data.data, size);
-			} else if (Array.isArray(data.data)) {
+			if (Array.isArray(data.data)) {
 				let sizePos = this.pos;
 
 				this.seek(this.pos + 4);
@@ -116,6 +125,10 @@ export abstract class WriteTarget {
 				this.seek(sizePos);
 				this.writeEBMLVarInt(size, 4);
 				this.seek(endPos);
+			} else if (typeof data.data === 'number') {
+				let size = data.size ?? measureUnsignedInt(data.data);
+				this.writeEBMLVarInt(size);
+				this.writeUnsignedInt(data.data, size);
 			} else if (typeof data.data === 'string') {
 				this.writeEBMLVarInt(data.data.length);
 				this.writeString(data.data);
@@ -150,10 +163,10 @@ const measureUnsignedInt = (value: number) => {
 
 const measureEBMLVarInt = (value: number) => {
 	if (value < (1 << 7) - 1) {
-		/* Top bit is set, leaving 7 bits to hold the integer, but we can't store
-		* 127 because "all bits set to one" is a reserved value. Same thing for the
-		* other cases below:
-		*/
+		/** Top bit is set, leaving 7 bits to hold the integer, but we can't store
+		 * 127 because "all bits set to one" is a reserved value. Same thing for the
+		 * other cases below:
+		 */
 		return 1;
 	} else if (value < (1 << 14) - 1) {
 		return 2;
@@ -168,6 +181,7 @@ const measureEBMLVarInt = (value: number) => {
 	}
 };
 
+/** A simple WriteTarget where all data is written into a dynamically-growing buffer in memory. */
 export class ArrayBufferWriteTarget extends WriteTarget {
 	buffer = new ArrayBuffer(2**16);
 	bytes = new Uint8Array(this.buffer);
@@ -177,14 +191,17 @@ export class ArrayBufferWriteTarget extends WriteTarget {
 	}
 
 	ensureSize(size: number) {
-		while (this.buffer.byteLength < size) {
-			let newBuffer = new ArrayBuffer(2 * this.buffer.byteLength);
-			let newBytes = new Uint8Array(newBuffer);
-			newBytes.set(this.bytes, 0);
+		let newLength = this.buffer.byteLength;
+		while (newLength < size) newLength *= 2;
 
-			this.buffer = newBuffer;
-			this.bytes = newBytes;
-		}
+		if (newLength === this.buffer.byteLength) return;
+
+		let newBuffer = new ArrayBuffer(newLength);
+		let newBytes = new Uint8Array(newBuffer);
+		newBytes.set(this.bytes, 0);
+
+		this.buffer = newBuffer;
+		this.bytes = newBytes;
 	}
 
 	write(data: Uint8Array) {
@@ -217,8 +234,17 @@ interface FileChunkSection {
 	end: number
 }
 
+/**
+ * A WriteTarget which writes directly to a file on disk, using the FileSystemWritableFileStream provided by the
+ * amazing File System Access API. It minimizes actual writes to disk by caching chunks of data in RAM and then flushing
+ * only large chunks of data to disk periodically.
+ */
 export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 	stream: FileSystemWritableFileStream;
+	/**
+	 * The file is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed to disk.
+	 * A chunk is flushed to disk if all of its contents have been written.
+	 */
 	chunks: FileChunk[] = [];
 	toFlush: FileChunk[] = [];
 
@@ -236,25 +262,30 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 	}
 
 	writeDataIntoChunks(data: Uint8Array, position: number) {
+		// First, find the chunk to write the data into, or create one if none exists
 		let chunkIndex = this.chunks.findIndex(x => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
 		if (chunkIndex === -1) chunkIndex = this.createChunk(position);
 		let chunk = this.chunks[chunkIndex];
 
+		// Figure out how much to write to the chunk, and then write to the chunk
 		let relativePosition = position - chunk.start;
 		let toWrite = data.subarray(0, Math.min(FILE_CHUNK_SIZE - relativePosition, data.byteLength));
 		chunk.data.set(toWrite, relativePosition);
 
+		// Create a section describing the region of data that was just written to
 		let section: FileChunkSection = {
 			start: relativePosition,
 			end: relativePosition + toWrite.byteLength
 		};
 		insertSectionIntoFileChunk(chunk, section);
 
+		// Queue chunk for flushing to disk if it has been fully written to
 		if (chunk.written[0].start === 0 && chunk.written[0].end === FILE_CHUNK_SIZE) {
 			this.toFlush.push(chunk);
 			this.chunks.splice(chunkIndex, 1);
 		}
 
+		// If the data didn't fit in one chunk, recurse with the remaining datas
 		if (toWrite.byteLength < data.byteLength) {
 			this.writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
 		}
@@ -283,6 +314,7 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 					});
 				}
 			}
+
 			this.toFlush.length = 0;
 		}
 	}
@@ -316,9 +348,11 @@ const insertSectionIntoFileChunk = (chunk: FileChunk, section: FileChunkSection)
 		}
 	}
 
+	// Insert the new section
 	chunk.written.splice(index + 1, 0, section);
 	if (index === -1 || chunk.written[index].end < section.start) index++;
 
+	// Merge overlapping sections
 	while (index < chunk.written.length - 1 && chunk.written[index].end >= chunk.written[index + 1].start) {
 		chunk.written[index].end = Math.max(chunk.written[index].end, chunk.written[index + 1].end);
 		chunk.written.splice(index + 1, 1);

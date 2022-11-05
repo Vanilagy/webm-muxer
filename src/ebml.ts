@@ -6,6 +6,7 @@ export interface EBMLElement {
 
 export type EBML = EBMLElement | Uint8Array | EBML[];
 
+/** Wrapper around a number to be able to differentiate it in the writer. */
 export class EBMLFloat32 {
 	value: number;
 
@@ -14,6 +15,7 @@ export class EBMLFloat32 {
 	}
 }
 
+/** Wrapper around a number to be able to differentiate it in the writer. */
 export class EBMLFloat64 {
 	value: number;
 
@@ -22,6 +24,7 @@ export class EBMLFloat64 {
 	}
 }
 
+/** Defines some of the EBML IDs used by Matroska files. */
 export enum EBMLId {
 	EBML = 0x1a45dfa3,
 	EBMLVersion = 0x4286,

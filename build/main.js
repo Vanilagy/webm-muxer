@@ -113,11 +113,7 @@
           } else {
             this.offsets.set(data, this.pos);
             this.writeUnsignedInt(data.id);
-            if (typeof data.data === "number") {
-              let size = (_a = data.size) != null ? _a : measureUnsignedInt(data.data);
-              this.writeEBMLVarInt(size);
-              this.writeUnsignedInt(data.data, size);
-            } else if (Array.isArray(data.data)) {
+            if (Array.isArray(data.data)) {
               let sizePos = this.pos;
               this.seek(this.pos + 4);
               let startPos = this.pos;
@@ -127,6 +123,10 @@
               this.seek(sizePos);
               this.writeEBMLVarInt(size, 4);
               this.seek(endPos);
+            } else if (typeof data.data === "number") {
+              let size = (_a = data.size) != null ? _a : measureUnsignedInt(data.data);
+              this.writeEBMLVarInt(size);
+              this.writeUnsignedInt(data.data, size);
             } else if (typeof data.data === "string") {
               this.writeEBMLVarInt(data.data.length);
               this.writeString(data.data);
@@ -178,13 +178,16 @@
           this.bytes = new Uint8Array(this.buffer);
         }
         ensureSize(size) {
-          while (this.buffer.byteLength < size) {
-            let newBuffer = new ArrayBuffer(2 * this.buffer.byteLength);
-            let newBytes = new Uint8Array(newBuffer);
-            newBytes.set(this.bytes, 0);
-            this.buffer = newBuffer;
-            this.bytes = newBytes;
-          }
+          let newLength = this.buffer.byteLength;
+          while (newLength < size)
+            newLength *= 2;
+          if (newLength === this.buffer.byteLength)
+            return;
+          let newBuffer = new ArrayBuffer(newLength);
+          let newBytes = new Uint8Array(newBuffer);
+          newBytes.set(this.bytes, 0);
+          this.buffer = newBuffer;
+          this.bytes = newBytes;
         }
         write(data) {
           this.ensureSize(this.pos + data.byteLength);
@@ -299,23 +302,33 @@
       var AUDIO_TRACK_NUMBER = 2;
       var VIDEO_TRACK_TYPE = 1;
       var AUDIO_TRACK_TYPE = 2;
-      var MAX_CHUNK_LENGTH_MS = 32e3;
-      var WebMWriter = class {
+      var MAX_CHUNK_LENGTH_MS = 2 ** 15;
+      var CODEC_PRIVATE_MAX_SIZE = 2 ** 12;
+      var WebMMuxer = class {
         constructor(options) {
           this.duration = 0;
           this.videoChunkQueue = [];
           this.audioChunkQueue = [];
           this.lastVideoTimestamp = 0;
           this.lastAudioTimestamp = 0;
+          this.finalized = false;
           this.options = options;
           if (options.target === "buffer") {
             this.target = new ArrayBufferWriteTarget();
           } else {
             this.target = new FileSystemWritableFileStreamWriteTarget(options.target);
           }
-          this.writeHeader();
+          this.createFileHeader();
         }
-        writeHeader() {
+        createFileHeader() {
+          this.writeEBMLHeader();
+          this.createSeekHead();
+          this.createSegmentInfo();
+          this.createTracks();
+          this.createSegment();
+          this.createCues();
+        }
+        writeEBMLHeader() {
           let ebmlHeader = { id: 440786851 /* EBML */, data: [
             { id: 17030 /* EBMLVersion */, data: 1 },
             { id: 17143 /* EBMLReadVersion */, data: 1 },
@@ -326,6 +339,8 @@
             { id: 17029 /* DocTypeReadVersion */, data: 2 }
           ] };
           this.target.writeEBML(ebmlHeader);
+        }
+        createSeekHead() {
           const kaxCues = new Uint8Array([28, 83, 187, 107]);
           const kaxInfo = new Uint8Array([21, 73, 169, 102]);
           const kaxTracks = new Uint8Array([22, 84, 174, 107]);
@@ -344,6 +359,8 @@
             ] }
           ] };
           this.seekHead = seekHead;
+        }
+        createSegmentInfo() {
           let segmentDuration = { id: 17545 /* Duration */, data: new EBMLFloat64(0) };
           this.segmentDuration = segmentDuration;
           let segmentInfo = { id: 357149030 /* Info */, data: [
@@ -353,10 +370,12 @@
             segmentDuration
           ] };
           this.segmentInfo = segmentInfo;
+        }
+        createTracks() {
           let tracksElement = { id: 374648427 /* Tracks */, data: [] };
           this.tracksElement = tracksElement;
           if (this.options.video) {
-            this.videoCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 12) };
+            this.videoCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
             let colourElement = { id: 21936 /* Colour */, data: [
               { id: 21937 /* MatrixCoefficients */, data: 2 },
               { id: 21946 /* TransferCharacteristics */, data: 2 },
@@ -379,7 +398,7 @@
             ].filter(Boolean) });
           }
           if (this.options.audio) {
-            this.audioCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 12) };
+            this.audioCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
             tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
               { id: 215 /* TrackNumber */, data: AUDIO_TRACK_NUMBER },
               { id: 29637 /* TrackUID */, data: AUDIO_TRACK_NUMBER },
@@ -393,16 +412,24 @@
               ].filter(Boolean) }
             ] });
           }
+        }
+        createSegment() {
           let segment = { id: 408125543 /* Segment */, size: 5, data: [
-            seekHead,
-            segmentInfo,
-            tracksElement
+            this.seekHead,
+            this.segmentInfo,
+            this.tracksElement
           ] };
           this.segment = segment;
           this.target.writeEBML(segment);
+        }
+        createCues() {
           this.cues = { id: 475249515 /* Cues */, data: [] };
         }
+        get segmentDataOffset() {
+          return this.target.offsets.get(this.segment) + 8;
+        }
         addVideoChunk(chunk, meta) {
+          this.ensureNotFinalized();
           this.lastVideoTimestamp = chunk.timestamp;
           while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= chunk.timestamp) {
             let audioChunk = this.audioChunkQueue.shift();
@@ -446,6 +473,7 @@
           }
         }
         addAudioChunk(chunk, meta) {
+          this.ensureNotFinalized();
           this.lastAudioTimestamp = chunk.timestamp;
           while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= chunk.timestamp) {
             let videoChunk = this.videoChunkQueue.shift();
@@ -462,7 +490,14 @@
         }
         writeSimpleBlock(chunk) {
           let msTime = Math.floor(chunk.timestamp / 1e3);
-          if (!this.currentCluster || chunk instanceof EncodedVideoChunk && chunk.type === "key" && msTime - this.currentClusterTimestamp >= 1e3 || msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS) {
+          let clusterIsTooLong = chunk.type !== "key" && msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS;
+          if (clusterIsTooLong) {
+            throw new Error(
+              `Current Matroska cluster exceeded its maximum allowed length of ${MAX_CHUNK_LENGTH_MS} milliseconds. In order to produce a correct WebM file, you must pass in a video key frame at least every ${MAX_CHUNK_LENGTH_MS} milliseconds.`
+            );
+          }
+          let shouldCreateNewClusterFromKeyFrame = (chunk instanceof EncodedVideoChunk || !this.options.video) && chunk.type === "key" && msTime - this.currentClusterTimestamp >= 1e3;
+          if (!this.currentCluster || shouldCreateNewClusterFromKeyFrame) {
             this.createNewCluster(msTime);
           }
           let prelude = new Uint8Array(4);
@@ -484,7 +519,7 @@
           this.target.seek(this.target.offsets.get(element));
           element = [
             { id: 25506 /* CodecPrivate */, size: 4, data: new Uint8Array(data) },
-            { id: 236 /* Void */, size: 4, data: new Uint8Array(2 ** 12 - 2 - 4 - data.byteLength) }
+            { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
           ];
           this.target.writeEBML(element);
           this.target.seek(endPos);
@@ -498,11 +533,12 @@
           ] };
           this.target.writeEBML(this.currentCluster);
           this.currentClusterTimestamp = timestamp;
+          let clusterOffsetFromSegment = this.target.offsets.get(this.currentCluster) - this.segmentDataOffset;
           this.cues.data.push({ id: 187 /* CuePoint */, data: [
             { id: 179 /* CueTime */, data: timestamp },
             { id: 183 /* CueTrackPositions */, data: [
               { id: 247 /* CueTrack */, data: VIDEO_TRACK_NUMBER },
-              { id: 241 /* CueClusterPosition */, data: this.target.offsets.get(this.currentCluster) - (this.target.offsets.get(this.segment) + 8) }
+              { id: 241 /* CueClusterPosition */, data: clusterOffsetFromSegment }
             ] }
           ] });
         }
@@ -521,18 +557,19 @@
           this.finalizeCurrentCluster();
           this.target.writeEBML(this.cues);
           let endPos = this.target.pos;
-          let segmentSize = this.target.pos - (this.target.offsets.get(this.segment) + 8);
+          let segmentSize = this.target.pos - this.segmentDataOffset;
           this.target.seek(this.target.offsets.get(this.segment) + 4);
           this.target.writeEBMLVarInt(segmentSize, 4);
           this.segmentDuration.data = new EBMLFloat64(this.duration);
           this.target.seek(this.target.offsets.get(this.segmentDuration));
           this.target.writeEBML(this.segmentDuration);
-          this.seekHead.data[0].data[1].data = this.target.offsets.get(this.cues) - (this.target.offsets.get(this.segment) + 8);
-          this.seekHead.data[1].data[1].data = this.target.offsets.get(this.segmentInfo) - (this.target.offsets.get(this.segment) + 8);
-          this.seekHead.data[2].data[1].data = this.target.offsets.get(this.tracksElement) - (this.target.offsets.get(this.segment) + 8);
+          this.seekHead.data[0].data[1].data = this.target.offsets.get(this.cues) - this.segmentDataOffset;
+          this.seekHead.data[1].data[1].data = this.target.offsets.get(this.segmentInfo) - this.segmentDataOffset;
+          this.seekHead.data[2].data[1].data = this.target.offsets.get(this.tracksElement) - this.segmentDataOffset;
           this.target.seek(this.target.offsets.get(this.seekHead));
           this.target.writeEBML(this.seekHead);
           this.target.seek(endPos);
+          this.finalized = true;
           if (this.target instanceof ArrayBufferWriteTarget) {
             return this.target.finalize();
           } else if (this.target instanceof FileSystemWritableFileStreamWriteTarget) {
@@ -540,12 +577,17 @@
           }
           return null;
         }
+        ensureNotFinalized() {
+          if (this.finalized) {
+            throw new Error("Cannot add new video or audio chunks after the file has been finalized.");
+          }
+        }
       };
       if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-        module.exports = WebMWriter;
+        module.exports = WebMMuxer;
       }
       if (typeof globalThis !== "undefined") {
-        globalThis.WebMWriter = WebMWriter;
+        globalThis.WebMMuxer = WebMMuxer;
       }
     }
   });

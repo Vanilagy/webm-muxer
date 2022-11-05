@@ -16,7 +16,7 @@
 	});
 	let fileWritableStream = await fileHandle.createWritable();
 
-	let writer = new WebMWriter({
+	let writer = new WebMMuxer({
 		target: fileWritableStream,
 		video: {
 			codec: 'V_VP9',
