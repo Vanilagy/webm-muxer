@@ -446,9 +446,8 @@ class WebMMuxer {
 	}
 }
 
-if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
+if (typeof exports === "object") {
 	module.exports = WebMMuxer;
-}
-if (typeof globalThis !== 'undefined') {
-	(globalThis as any).WebMMuxer = WebMMuxer;
+} else {
+	(this as any).WebMMuxer = WebMMuxer;
 }

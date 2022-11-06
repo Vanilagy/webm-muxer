@@ -1,18 +1,20 @@
 const esbuild = require('esbuild');
 
-esbuild.build({
+const config = {
 	entryPoints: ['src/main.ts'],
 	bundle: true,
 	outfile: 'build/webm-muxer.js',
 	logLevel: 'info',
-	watch: true
-});
+	watch: true,
+	platform: 'node'
+}
 
 esbuild.build({
-	entryPoints: ['src/main.ts'],
-	bundle: true,
+	...config,
+	outfile: 'build/webm-muxer.js'
+});
+esbuild.build({
+	...config,
 	outfile: 'build/webm-muxer.min.js',
-	logLevel: 'info',
-	watch: true,
 	minify: true
 });
