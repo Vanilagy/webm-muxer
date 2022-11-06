@@ -446,8 +446,4 @@ class WebMMuxer {
 	}
 }
 
-if (typeof exports === "object") {
-	module.exports = WebMMuxer;
-} else {
-	(this as any).WebMMuxer = WebMMuxer;
-}
+export default WebMMuxer;

@@ -6,7 +6,12 @@ const config = {
 	outfile: 'build/webm-muxer.js',
 	logLevel: 'info',
 	watch: true,
-	platform: 'node'
+	format: 'iife',
+	// The following are hacks to basically make this an UMD module. No native support for that in esbuild as of today
+	globalName: 'WebMMuxer',
+	footer: {
+		js: 'WebMMuxer = WebMMuxer.default;\nif (typeof exports === "object") module.exports = WebMMuxer;'
+	}
 }
 
 esbuild.build({
