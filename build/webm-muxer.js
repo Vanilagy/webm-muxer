@@ -587,4 +587,4 @@ var WebMMuxer = (() => {
   return __toCommonJS(main_exports);
 })();
 WebMMuxer = WebMMuxer.default;
-if (typeof exports === "object") module.exports = WebMMuxer;
+if (typeof module === "object" && typeof module.exports === "object") module.exports = WebMMuxer;
