@@ -10,8 +10,8 @@ Demo here maybe??
 This library was created to power the in-game video renderer of my browser game
 [Marble Blast Web](https://github.com/vanilagy/marbleblast). Previous efforts at in-browser WebM muxing, such as
 [webm-writer-js](https://github.com/thenickdude/webm-writer-js) or
-[webm-muxer.js](https://github.com/davedoesdev/webm-muxer.js),were either lacking in functionality or were way too heavy
-in terms of byte size, which prompted the creation of this library.
+[webm-muxer.js](https://github.com/davedoesdev/webm-muxer.js), were either lacking in functionality or were way too
+heavy in terms of byte size, which prompted the creation of this library.
 
 ## Installation
 Using NPM, simply install this package using
