@@ -155,3 +155,6 @@ EBML (think of it like binary XML) to structure its file. This project therefore
 create the Matroska elements needed to form a WebM file. Many thanks to
 [webm-writer-js](https://github.com/thenickdude/webm-writer-js) for being the inspiration for most of the core EBML
 writing code.
+
+For development, clone this repository, install everything with `npm i`, then run `npm run watch` to bundle the code
+into the `build` directory.
