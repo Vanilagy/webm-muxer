@@ -21,3 +21,11 @@ declare class WebMMuxer {
 	addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata): void;
 	finalize(): ArrayBuffer | null;
 }
+
+type WebMMuxerClass = typeof WebMMuxer;
+
+declare global {
+	var WebMMuxer: WebMMuxerClass;
+}
+
+export default WebMMuxer;
