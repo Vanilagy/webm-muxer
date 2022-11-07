@@ -31,20 +31,20 @@ let muxer = new WebMMuxer(options);
 The available options are defined by the following interface:
 ```ts
 interface WebMMuxerOptions {
-	// When 'buffer' is used, the muxed file is written to a buffer in memory. When a FileSystemWritableFileStream acquired through the File System Access API (see example below) is used, the muxed file is written directly to disk, allowing for files way larger than what would fit in RAM.
-	target: 'buffer' | FileSystemWritableFileStream,
-	video?: {
-		codec: string,
-		width: number,
-		height: number
-		frameRate?: number // Optional, adds metadata to the file
-	},
-	audio?: {
-		codec: string,
-		numberOfChannels: number,
-		sampleRate: number,
-		bitDepth?: number // Mainly necessary for PCM-coded audio
-	}
+    // When 'buffer' is used, the muxed file is written to a buffer in memory. When a FileSystemWritableFileStream acquired through the File System Access API (see example below) is used, the muxed file is written directly to disk, allowing for files way larger than what would fit in RAM.
+    target: 'buffer' | FileSystemWritableFileStream,
+    video?: {
+        codec: string,
+        width: number,
+        height: number
+        frameRate?: number // Optional, adds metadata to the file
+    },
+    audio?: {
+        codec: string,
+        numberOfChannels: number,
+        sampleRate: number,
+        bitDepth?: number // Mainly necessary for PCM-coded audio
+    }
 }
 ```
 Codecs supported by WebM are `V_VP8`, `V_VP9`, `V_AV1`, `A_OPUS` and `A_VORBIS`.
@@ -53,46 +53,46 @@ Some examples:
 ```js
 // Create a muxer with a video track running the VP9 codec, and no audio track. The muxed file is written to a buffer in memory.
 let muxer1 = new WebMMuxer({
-	target: 'buffer',
-	video: {
-		codec: 'V_VP9',
-		width: 1280,
-		height: 720
-	}
+    target: 'buffer',
+    video: {
+        codec: 'V_VP9',
+        width: 1280,
+        height: 720
+    }
 });
 
 // Create a muxer with a video track running the VP9 codec, and an audio track running the Opus codec. The muxed file is written directly to a file on disk, using the File System Access API.
 let fileHandle = await window.showSaveFilePicker({
-	suggestedName: `video.webm`,
-	types: [{
-		description: 'Video File',
-		accept: {'video/webm' :['.webm']}
-	}],
+    suggestedName: `video.webm`,
+    types: [{
+        description: 'Video File',
+        accept: {'video/webm' :['.webm']}
+    }],
 });
 let fileWritableStream = await fileHandle.createWritable();
 let muxer2 = new WebMMuxer({
-	target: fileWritableStream,
-	video: {
-		codec: 'V_VP9',
-		width: 1920,
-		height: 1080,
-		frameRate: 60
-	},
-	audio: {
-		codec: 'A_OPUS',
-		numberOfChannels: 2,
-		sampleRate: 48000
-	}
+    target: fileWritableStream,
+    video: {
+        codec: 'V_VP9',
+        width: 1920,
+        height: 1080,
+        frameRate: 60
+    },
+    audio: {
+        codec: 'A_OPUS',
+        numberOfChannels: 2,
+        sampleRate: 48000
+    }
 });
 
 // Create a muxer running only an Opus-coded audio track, and no video. Writes to a buffer in memory.
 let muxer3 = new WebMMuxer({
-	target: 'buffer',
-	audio: {
-		codec: 'A_OPUS',
-		numberOfChannels: 1,
-		sampleRate: 44100
-	}
+    target: 'buffer',
+    audio: {
+        codec: 'A_OPUS',
+        numberOfChannels: 1,
+        sampleRate: 44100
+    }
 });
 ```
 
@@ -104,8 +104,8 @@ muxer.addAudioChunk(encodedAudioChunk, encodedAudioChunkMetadata);
 The metadata is passed to the second parameter of the `output` callback given to the VideoEncoder or AudioEncoder's constructor and needs to be passed into the muxer, like so:
 ```js
 let videoEncoder = new VideoEncoder({
-	output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-	error: e => console.error(e)
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: e => console.error(e)
 });
 videoEncoder.configure(/* ... */);
 ```
