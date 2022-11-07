@@ -134,9 +134,9 @@ await fileWritableStream.close();
 
 ## Details
 ### Video key frame frequency
-Canonical WebM files can have a Matroska Cluster length of 32.768 seconds, and each cluster must begin with a video key
-frame. You therefore need to tell your `VideoEncoder` to encode a `VideoFrame` as a key frame at least every 32 seconds,
-otherwise your WebM file will be incorrect. You can do this by doing:
+Canonical WebM files can only have a maximum Matroska Cluster length of 32.768 seconds, and each cluster must begin with
+a video key frame. You therefore need to tell your `VideoEncoder` to encode a `VideoFrame` as a key frame at least every
+32 seconds, otherwise your WebM file will be incorrect. You can do this by doing:
 ```js
 videoEncoder.encode(frame, { keyFrame: true });
 ```
