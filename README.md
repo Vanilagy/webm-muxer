@@ -1,4 +1,4 @@
-# webm-muxer - In-browser WebM multiplexer
+# webm-muxer - JavaScript WebM multiplexer
 
 ![](https://img.shields.io/npm/v/webm-muxer)
 ![](https://img.shields.io/bundlephobia/minzip/webm-muxer)
