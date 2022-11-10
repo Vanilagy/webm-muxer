@@ -1,0 +1,9 @@
+node_modules
+demo
+src
+test
+.gitignore
+.gitattributes
+build.js
+build/webm-muxer.min.js
+tsconfig.json

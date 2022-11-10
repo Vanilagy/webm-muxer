@@ -28,4 +28,4 @@ declare global {
 	var WebMMuxer: WebMMuxerClass;
 }
 
-export default WebMMuxer;
+export = WebMMuxer;

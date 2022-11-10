@@ -1,13 +1,16 @@
 # webm-muxer - In-browser WebM multiplexer
 
+![](https://img.shields.io/npm/v/webm-muxer)
+![](https://img.shields.io/bundlephobia/minzip/webm-muxer)
+
 The WebCodecs API provides low-level access to media codecs, but provides no way of actually packaging (multiplexing)
 the encoded media into a playable file. This project implements a WebM multiplexer in pure TypeScript, which is
-high-quality, fast and tiny (3.6 kB minified + gzipped), and supports both video and audio.
+high-quality, fast and tiny, and supports both video and audio.
 
 [Demo](https://vanilagy.github.io/webm-muxer/demo/)
 
 ## Motivation
-This library was created to power the in-game video renderer of my browser game
+This library was created to power the in-game video renderer of the browser game
 [Marble Blast Web](https://github.com/vanilagy/marbleblast). Previous efforts at in-browser WebM muxing, such as
 [webm-writer-js](https://github.com/thenickdude/webm-writer-js) or
 [webm-muxer.js](https://github.com/davedoesdev/webm-muxer.js), were either lacking in functionality or were way too

@@ -4,8 +4,7 @@
 		"strict": true,
 		"strictNullChecks": false,
 		"noImplicitAny": true,
-		"types": ["Node", "@types/wicg-file-system-access", "@types/dom-webcodecs"],
-		"outDir": "./build"
+		"types": ["Node", "@types/wicg-file-system-access", "@types/dom-webcodecs"]
 	},
 	"include": [
 		"src/**/*"
