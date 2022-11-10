@@ -14,6 +14,7 @@ let recording = false;
 let audioTrack = null;
 let firstAudioTimestamp = null;
 let intervalId = null;
+let lastKeyFrame = null;
 
 const startRecording = async () => {
 	startRecordingButton.style.display = 'none';
@@ -79,6 +80,7 @@ const startRecording = async () => {
 
 	startTime = document.timeline.currentTime;
 	recording = true;
+	lastKeyFrame = -Infinity;
 
 	encodeVideoFrame();
 	intervalId = setInterval(encodeVideoFrame, 1000/30);
@@ -101,7 +103,12 @@ const encodeVideoFrame = () => {
 	let frame = new VideoFrame(canvas, {
 		timestamp: elapsedTime * 1000
 	});
-	videoEncoder.encode(frame);
+
+	// Ensure a video key frame at least every 10 seconds
+	let needsKeyFrame = elapsedTime - lastKeyFrame >= 10000;
+	if (needsKeyFrame) lastKeyFrame = elapsedTime;
+
+	videoEncoder.encode(frame, { keyFrame: needsKeyFrame });
 	frame.close();
 
 	recordingStatus.textContent =
