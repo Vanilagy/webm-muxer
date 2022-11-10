@@ -24,6 +24,13 @@ interface WebMMuxerOptions {
 	}
 }
 
+interface InternalMediaChunk {
+	data: Uint8Array,
+	timestamp: number,
+	type: 'key' | 'delta',
+	trackNumber: number
+}
+
 class WebMMuxer {
 	private target: WriteTarget;
 	private options: WebMMuxerOptions;
@@ -56,8 +63,8 @@ class WebMMuxer {
 	private currentClusterTimestamp: number;
 
 	private duration = 0;
-	private videoChunkQueue: EncodedVideoChunk[] = [];
-	private audioChunkQueue: EncodedAudioChunk[] = [];
+	private videoChunkQueue: InternalMediaChunk[] = [];
+	private audioChunkQueue: InternalMediaChunk[] = [];
 	private lastVideoTimestamp = 0;
 	private lastAudioTimestamp = 0;
 	private finalized = false;
@@ -210,8 +217,11 @@ class WebMMuxer {
 		return this.target.offsets.get(this.segment) + 8;
 	}
 
-	public addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata) {
+	public addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number) {
 		this.ensureNotFinalized();
+		if (!this.options.video) throw new Error("No video track declared.");
+
+		let internalChunk = this.createInternalChunk(chunk, timestamp);
 
 		/**
 		 * Ok, so the algorithm used to insert video and audio blocks (if both are present) is one where we want to
@@ -222,19 +232,19 @@ class WebMMuxer {
 		 * chunks remaining in the queues also be flushed to the file.
 		 */
 
-		this.lastVideoTimestamp = chunk.timestamp;
+		this.lastVideoTimestamp = internalChunk.timestamp;
 
 		// Write all audio chunks with a timestamp smaller than the incoming video chunk
-		while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= chunk.timestamp) {
+		while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= internalChunk.timestamp) {
 			let audioChunk = this.audioChunkQueue.shift();
 			this.writeSimpleBlock(audioChunk);
 		}
 
 		// Depending on the last audio chunk, either write the video chunk to the file or enqueue it
-		if (!this.options.audio || chunk.timestamp <= this.lastAudioTimestamp) {
-			this.writeSimpleBlock(chunk);
+		if (!this.options.audio || internalChunk.timestamp <= this.lastAudioTimestamp) {
+			this.writeSimpleBlock(internalChunk);
 		} else {
-			this.videoChunkQueue.push(chunk);
+			this.videoChunkQueue.push(internalChunk);
 		}
 
 		// Write possible video decoder metadata to the file
@@ -274,22 +284,24 @@ class WebMMuxer {
 		}
 	}
 	
-	public addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata) {
+	public addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number) {
 		this.ensureNotFinalized();
+		if (!this.options.audio) throw new Error("No audio track declared.");
+
+		let internalChunk = this.createInternalChunk(chunk, timestamp);
 
 		// Algorithm explained in `addVideoChunk`
+		this.lastAudioTimestamp = internalChunk.timestamp;
 
-		this.lastAudioTimestamp = chunk.timestamp;
-
-		while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= chunk.timestamp) {
+		while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= internalChunk.timestamp) {
 			let videoChunk = this.videoChunkQueue.shift();
 			this.writeSimpleBlock(videoChunk);
 		}
 
-		if (!this.options.video || chunk.timestamp <= this.lastVideoTimestamp) {
-			this.writeSimpleBlock(chunk);
+		if (!this.options.video || internalChunk.timestamp <= this.lastVideoTimestamp) {
+			this.writeSimpleBlock(internalChunk);
 		} else {
-			this.audioChunkQueue.push(chunk);
+			this.audioChunkQueue.push(internalChunk);
 		}
 
 		// Write possible audio decoder metadata to the file
@@ -298,8 +310,23 @@ class WebMMuxer {
 		}
 	}
 
+	/** Converts a read-only external chunk into an internal one for easier use. */
+	private createInternalChunk(externalChunk: EncodedVideoChunk | EncodedAudioChunk, timestamp?: number) {
+		let data = new Uint8Array(externalChunk.byteLength);
+		externalChunk.copyTo(data);
+
+		let internalChunk: InternalMediaChunk = {
+			data,
+			timestamp: timestamp ?? externalChunk.timestamp,
+			type: externalChunk.type,
+			trackNumber: externalChunk instanceof EncodedVideoChunk ? VIDEO_TRACK_NUMBER : AUDIO_TRACK_NUMBER
+		};
+
+		return internalChunk;
+	}
+
 	/** Writes an EBML SimpleBlock containing video or audio data to the file. */
-	private writeSimpleBlock(chunk: EncodedVideoChunk | EncodedAudioChunk) {
+	private writeSimpleBlock(chunk: InternalMediaChunk) {
 		let msTime = Math.floor(chunk.timestamp / 1000);
 		let clusterIsTooLong = chunk.type !== 'key' && msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS;
 
@@ -326,16 +353,13 @@ class WebMMuxer {
 		let prelude = new Uint8Array(4);
 		let view = new DataView(prelude.buffer);
 		// 0x80 to indicate it's the last byte of a multi-byte number
-		view.setUint8(0, 0x80 | ((chunk instanceof EncodedVideoChunk) ? VIDEO_TRACK_NUMBER : AUDIO_TRACK_NUMBER));
+		view.setUint8(0, 0x80 | chunk.trackNumber);
 		view.setUint16(1, msTime - this.currentClusterTimestamp, false);
 		view.setUint8(3, Number(chunk.type === 'key') << 7); // Flags
 
-		let data = new Uint8Array(chunk.byteLength);
-		chunk.copyTo(data);
-
 		let simpleBlock = { id: EBMLId.SimpleBlock, data: [
 			prelude,
-			data
+			chunk.data
 		] };
 		this.target.writeEBML(simpleBlock);
 

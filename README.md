@@ -4,7 +4,7 @@ The WebCodecs API provides low-level access to media codecs, but provides no way
 the encoded media into a playable file. This project implements a WebM multiplexer in pure TypeScript, which is
 high-quality, fast and tiny (3.5 kB minified + gzipped), and supports both video and audio.
 
-Demo here maybe??
+[Demo](https://vanilagy.github.io/webm/demo/)
 
 ## Motivation
 This library was created to power the in-game video renderer of my browser game
@@ -113,8 +113,12 @@ Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxe
 muxer.addVideoChunk(encodedVideoChunk, encodedVideoChunkMetadata);
 muxer.addAudioChunk(encodedAudioChunk, encodedAudioChunkMetadata);
 ```
-The metadata is passed to the second parameter of the `output` callback given to the VideoEncoder or AudioEncoder's
-constructor and needs to be passed into the muxer, like so:
+In addition, both methods accept an optional, third argument `timestamp` which, if specified, overrides the `timestamp`
+property of the passed-in chunk. This is useful when getting chunks from a MediaStreamTrackProcessor from live media,
+which usually come with huge timestamp values and don't start at 0, which we want.
+
+The metadata comes from the second parameter of the `output` callback given to the
+VideoEncoder or AudioEncoder's constructor and needs to be passed into the muxer, like so:
 ```js
 let videoEncoder = new VideoEncoder({
     output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),

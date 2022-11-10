@@ -428,17 +428,20 @@ var WebMMuxer = (() => {
     get segmentDataOffset() {
       return this.target.offsets.get(this.segment) + 8;
     }
-    addVideoChunk(chunk, meta) {
+    addVideoChunk(chunk, meta, timestamp) {
       this.ensureNotFinalized();
-      this.lastVideoTimestamp = chunk.timestamp;
-      while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= chunk.timestamp) {
+      if (!this.options.video)
+        throw new Error("No video track declared.");
+      let internalChunk = this.createInternalChunk(chunk, timestamp);
+      this.lastVideoTimestamp = internalChunk.timestamp;
+      while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= internalChunk.timestamp) {
         let audioChunk = this.audioChunkQueue.shift();
         this.writeSimpleBlock(audioChunk);
       }
-      if (!this.options.audio || chunk.timestamp <= this.lastAudioTimestamp) {
-        this.writeSimpleBlock(chunk);
+      if (!this.options.audio || internalChunk.timestamp <= this.lastAudioTimestamp) {
+        this.writeSimpleBlock(internalChunk);
       } else {
-        this.videoChunkQueue.push(chunk);
+        this.videoChunkQueue.push(internalChunk);
       }
       if (meta.decoderConfig) {
         if (meta.decoderConfig.colorSpace) {
@@ -472,21 +475,35 @@ var WebMMuxer = (() => {
         }
       }
     }
-    addAudioChunk(chunk, meta) {
+    addAudioChunk(chunk, meta, timestamp) {
       this.ensureNotFinalized();
-      this.lastAudioTimestamp = chunk.timestamp;
-      while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= chunk.timestamp) {
+      if (!this.options.audio)
+        throw new Error("No audio track declared.");
+      let internalChunk = this.createInternalChunk(chunk, timestamp);
+      this.lastAudioTimestamp = internalChunk.timestamp;
+      while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= internalChunk.timestamp) {
         let videoChunk = this.videoChunkQueue.shift();
         this.writeSimpleBlock(videoChunk);
       }
-      if (!this.options.video || chunk.timestamp <= this.lastVideoTimestamp) {
-        this.writeSimpleBlock(chunk);
+      if (!this.options.video || internalChunk.timestamp <= this.lastVideoTimestamp) {
+        this.writeSimpleBlock(internalChunk);
       } else {
-        this.audioChunkQueue.push(chunk);
+        this.audioChunkQueue.push(internalChunk);
       }
       if (meta.decoderConfig) {
         this.writeCodecPrivate(this.audioCodecPrivate, meta.decoderConfig.description);
       }
+    }
+    createInternalChunk(externalChunk, timestamp) {
+      let data = new Uint8Array(externalChunk.byteLength);
+      externalChunk.copyTo(data);
+      let internalChunk = {
+        data,
+        timestamp: timestamp != null ? timestamp : externalChunk.timestamp,
+        type: externalChunk.type,
+        trackNumber: externalChunk instanceof EncodedVideoChunk ? VIDEO_TRACK_NUMBER : AUDIO_TRACK_NUMBER
+      };
+      return internalChunk;
     }
     writeSimpleBlock(chunk) {
       let msTime = Math.floor(chunk.timestamp / 1e3);
@@ -502,14 +519,12 @@ var WebMMuxer = (() => {
       }
       let prelude = new Uint8Array(4);
       let view = new DataView(prelude.buffer);
-      view.setUint8(0, 128 | (chunk instanceof EncodedVideoChunk ? VIDEO_TRACK_NUMBER : AUDIO_TRACK_NUMBER));
+      view.setUint8(0, 128 | chunk.trackNumber);
       view.setUint16(1, msTime - this.currentClusterTimestamp, false);
       view.setUint8(3, Number(chunk.type === "key") << 7);
-      let data = new Uint8Array(chunk.byteLength);
-      chunk.copyTo(data);
       let simpleBlock = { id: 163 /* SimpleBlock */, data: [
         prelude,
-        data
+        chunk.data
       ] };
       this.target.writeEBML(simpleBlock);
       this.duration = Math.max(this.duration, msTime);

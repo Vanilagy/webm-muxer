@@ -1,1 +1,23 @@
-Demo test
+<!DOCTYPE html>
+<html lang="en" translate="no">
+	<head>
+		<meta charset="UTF-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>WebM muxer demo</title>
+		<link rel="stylesheet" href="./style.css">
+		<script src="../build/webm-muxer.js" defer></script>
+		<script src="./script.js" defer></script>
+	</head>
+	<body>
+		<main>
+			<h1>WebM muxer demo - draw something!</h1>
+			<canvas width="640" height="480"></canvas>
+			<div id="controls">
+				<button id="start-recording">Start recording</button>
+				<button id="end-recording" style="display: none;">End recording</button>
+			</div>
+			<p id="recording-status"></p>
+		</main>
+	</body>
+</html>
