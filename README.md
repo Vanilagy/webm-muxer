@@ -2,7 +2,7 @@
 
 The WebCodecs API provides low-level access to media codecs, but provides no way of actually packaging (multiplexing)
 the encoded media into a playable file. This project implements a WebM multiplexer in pure TypeScript, which is
-high-quality, fast and tiny (3.5 kB minified + gzipped), and supports both video and audio.
+high-quality, fast and tiny (3.6 kB minified + gzipped), and supports both video and audio.
 
 [Demo](https://vanilagy.github.io/webm/demo/)
 
