@@ -11,6 +11,7 @@ let videoEncoder = null;
 let audioEncoder = null;
 let startTime = null;
 let recording = false;
+let audioTrack = null;
 let firstAudioTimestamp = null;
 let intervalId = null;
 
@@ -22,7 +23,7 @@ const startRecording = async () => {
 	try {
 		userMedia = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
 	} catch (e) {}
-	let audioTrack = userMedia.getAudioTracks()[0];
+	audioTrack = userMedia.getAudioTracks()[0];
 	if (!audioTrack) console.warn("Couldn't acquire a user media audio track.");
 
 	endRecordingButton.style.display = 'block';
@@ -113,6 +114,7 @@ const endRecording = async () => {
 	recording = false;
 
 	clearInterval(intervalId);
+	audioTrack?.stop();
 
 	await videoEncoder.flush();
 	await audioEncoder.flush();
