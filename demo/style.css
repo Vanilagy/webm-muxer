@@ -17,10 +17,22 @@ body {
 	user-select: none;
 }
 
+main {
+	width: 640px;
+}
+
 h1 {
 	margin: 0;
 	font-weight: normal;
 	text-align: center;
+	margin-bottom: 10px;
+}
+
+h2 {
+	margin: 0;
+	font-weight: normal;
+	text-align: center;
+	font-size: 14px;
 	margin-bottom: 20px;
 }
 
@@ -31,7 +43,7 @@ canvas {
 }
 
 #controls {
-	margin-top: 20px;
+	margin-bottom: 20px;
 	display: flex;
 	justify-content: center;
 	height: 38px;

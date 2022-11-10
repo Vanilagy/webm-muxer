@@ -304,6 +304,7 @@ var WebMMuxer = (() => {
   var AUDIO_TRACK_TYPE = 2;
   var MAX_CHUNK_LENGTH_MS = __pow(2, 15);
   var CODEC_PRIVATE_MAX_SIZE = __pow(2, 12);
+  var APP_NAME = "https://github.com/Vanilagy/webm-muxer";
   var WebMMuxer = class {
     constructor(options) {
       this.duration = 0;
@@ -365,8 +366,8 @@ var WebMMuxer = (() => {
       this.segmentDuration = segmentDuration;
       let segmentInfo = { id: 357149030 /* Info */, data: [
         { id: 2807729 /* TimestampScale */, data: 1e6 },
-        { id: 19840 /* MuxingApp */, data: "Vani's epic muxer" },
-        { id: 22337 /* WritingApp */, data: "Vani's epic muxer" },
+        { id: 19840 /* MuxingApp */, data: APP_NAME },
+        { id: 22337 /* WritingApp */, data: APP_NAME },
         segmentDuration
       ] };
       this.segmentInfo = segmentInfo;

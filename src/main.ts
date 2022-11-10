@@ -7,6 +7,7 @@ const VIDEO_TRACK_TYPE = 1;
 const AUDIO_TRACK_TYPE = 2;
 const MAX_CHUNK_LENGTH_MS = 2**15;
 const CODEC_PRIVATE_MAX_SIZE = 2**12;
+const APP_NAME = 'https://github.com/Vanilagy/webm-muxer';
 
 interface WebMMuxerOptions {
 	target: 'buffer' | FileSystemWritableFileStream,
@@ -135,8 +136,8 @@ class WebMMuxer {
 
 		let segmentInfo: EBML = { id: EBMLId.Info, data: [
 			{ id: EBMLId.TimestampScale, data: 1e6 },
-			{ id: EBMLId.MuxingApp, data: "Vani's epic muxer" },
-			{ id: EBMLId.WritingApp, data: "Vani's epic muxer" },
+			{ id: EBMLId.MuxingApp, data: APP_NAME },
+			{ id: EBMLId.WritingApp, data: APP_NAME },
 			segmentDuration
 		] };
 		this.segmentInfo = segmentInfo;
