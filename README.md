@@ -113,9 +113,9 @@ Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxe
 muxer.addVideoChunk(encodedVideoChunk, encodedVideoChunkMetadata);
 muxer.addAudioChunk(encodedAudioChunk, encodedAudioChunkMetadata);
 ```
-In addition, both methods accept an optional, third argument `timestamp` which, if specified, overrides the `timestamp`
-property of the passed-in chunk. This is useful when getting chunks from a MediaStreamTrackProcessor from live media,
-which usually come with huge timestamp values and don't start at 0, which we want.
+In addition, both methods accept an optional, third argument `timestamp` (microseconds) which, if specified, overrides
+the `timestamp` property of the passed-in chunk. This is useful when getting chunks from a MediaStreamTrackProcessor
+from live media, which usually come with huge timestamp values and don't start at 0, which we want.
 
 The metadata comes from the second parameter of the `output` callback given to the
 VideoEncoder or AudioEncoder's constructor and needs to be passed into the muxer, like so:
