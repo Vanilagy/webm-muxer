@@ -23,8 +23,8 @@ const startRecording = async () => {
 	let userMedia = null;
 	try {
 		userMedia = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+		audioTrack = userMedia.getAudioTracks()[0];
 	} catch (e) {}
-	audioTrack = userMedia.getAudioTracks()[0];
 	if (!audioTrack) console.warn("Couldn't acquire a user media audio track.");
 
 	endRecordingButton.style.display = 'block';
@@ -76,6 +76,17 @@ const startRecording = async () => {
 			sampleRate: audioSampleRate,
 			bitrate: 64000,
 		});
+
+		// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track
+		let trackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
+		let consumer = new WritableStream({
+			write(audioData) {
+				if (!recording) return;
+				audioEncoder.encode(audioData);
+				audioData.close();
+			}
+		});
+		trackProcessor.readable.pipeTo(consumer);
 	}
 
 	startTime = document.timeline.currentTime;
@@ -84,17 +95,6 @@ const startRecording = async () => {
 
 	encodeVideoFrame();
 	intervalId = setInterval(encodeVideoFrame, 1000/30);
-
-	// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track
-	let trackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
-	let consumer = new WritableStream({
-		write(audioData) {
-			if (!recording) return;
-			audioEncoder.encode(audioData);
-			audioData.close();
-		}
-	});
-	trackProcessor.readable.pipeTo(consumer);
 };
 startRecordingButton.addEventListener('click', startRecording);
 
