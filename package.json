@@ -1,6 +1,6 @@
 {
   "name": "webm-muxer",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "WebM multiplexer in pure TypeScript for use with WebCodecs API, video & audio.",
   "main": "./build/webm-muxer.js",
   "types": "./build/webm-muxer.d.ts",
