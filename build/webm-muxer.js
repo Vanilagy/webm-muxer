@@ -44,6 +44,7 @@ var WebMMuxer = (() => {
       this.helper = new Uint8Array(8);
       this.helperView = new DataView(this.helper.buffer);
       this.offsets = /* @__PURE__ */ new WeakMap();
+      this.dataOffsets = /* @__PURE__ */ new WeakMap();
     }
     writeFloat32(value) {
       this.helperView.setFloat32(0, value, false);
@@ -56,8 +57,10 @@ var WebMMuxer = (() => {
     writeUnsignedInt(value, width = measureUnsignedInt(value)) {
       let pos = 0;
       switch (width) {
+        case 6:
+          this.helperView.setUint8(pos++, value / __pow(2, 40) | 0);
         case 5:
-          this.helperView.setUint8(pos++, Math.floor(value / __pow(2, 32)));
+          this.helperView.setUint8(pos++, value / __pow(2, 32) | 0);
         case 4:
           this.helperView.setUint8(pos++, value >> 24);
         case 3:
@@ -94,7 +97,15 @@ var WebMMuxer = (() => {
           this.helperView.setUint8(pos++, value);
           break;
         case 5:
-          this.helperView.setUint8(pos++, 1 << 3 | value / 4294967296 & 7);
+          this.helperView.setUint8(pos++, 1 << 3 | value / __pow(2, 32) & 7);
+          this.helperView.setUint8(pos++, value >> 24);
+          this.helperView.setUint8(pos++, value >> 16);
+          this.helperView.setUint8(pos++, value >> 8);
+          this.helperView.setUint8(pos++, value);
+          break;
+        case 6:
+          this.helperView.setUint8(pos++, 1 << 2 | value / __pow(2, 40) & 3);
+          this.helperView.setUint8(pos++, value / __pow(2, 32) | 0);
           this.helperView.setUint8(pos++, value >> 24);
           this.helperView.setUint8(pos++, value >> 16);
           this.helperView.setUint8(pos++, value >> 8);
@@ -109,7 +120,7 @@ var WebMMuxer = (() => {
       this.write(new Uint8Array(str.split("").map((x) => x.charCodeAt(0))));
     }
     writeEBML(data) {
-      var _a;
+      var _a, _b;
       if (data instanceof Uint8Array) {
         this.write(data);
       } else if (Array.isArray(data)) {
@@ -121,16 +132,18 @@ var WebMMuxer = (() => {
         this.writeUnsignedInt(data.id);
         if (Array.isArray(data.data)) {
           let sizePos = this.pos;
-          this.seek(this.pos + 4);
+          let sizeSize = (_a = data.size) != null ? _a : 4;
+          this.seek(this.pos + sizeSize);
           let startPos = this.pos;
+          this.dataOffsets.set(data, startPos);
           this.writeEBML(data.data);
           let size = this.pos - startPos;
           let endPos = this.pos;
           this.seek(sizePos);
-          this.writeEBMLVarInt(size, 4);
+          this.writeEBMLVarInt(size, sizeSize);
           this.seek(endPos);
         } else if (typeof data.data === "number") {
-          let size = (_a = data.size) != null ? _a : measureUnsignedInt(data.data);
+          let size = (_b = data.size) != null ? _b : measureUnsignedInt(data.data);
           this.writeEBMLVarInt(size);
           this.writeUnsignedInt(data.data, size);
         } else if (typeof data.data === "string") {
@@ -158,8 +171,10 @@ var WebMMuxer = (() => {
       return 3;
     } else if (value < __pow(2, 32)) {
       return 4;
-    } else {
+    } else if (value < __pow(2, 40)) {
       return 5;
+    } else {
+      return 6;
     }
   };
   var measureEBMLVarInt = (value) => {
@@ -173,6 +188,8 @@ var WebMMuxer = (() => {
       return 4;
     } else if (value < __pow(2, 35) - 1) {
       return 5;
+    } else if (value < __pow(2, 42) - 1) {
+      return 6;
     } else {
       throw new Error("EBML VINT size not supported " + value);
     }
@@ -305,6 +322,8 @@ var WebMMuxer = (() => {
   var MAX_CHUNK_LENGTH_MS = __pow(2, 15);
   var CODEC_PRIVATE_MAX_SIZE = __pow(2, 12);
   var APP_NAME = "https://github.com/Vanilagy/webm-muxer";
+  var SEGMENT_SIZE_BYTES = 6;
+  var CLUSTER_SIZE_BYTES = 5;
   var WebMMuxer = class {
     constructor(options) {
       this.duration = 0;
@@ -415,7 +434,7 @@ var WebMMuxer = (() => {
       }
     }
     createSegment() {
-      let segment = { id: 408125543 /* Segment */, size: 5, data: [
+      let segment = { id: 408125543 /* Segment */, size: SEGMENT_SIZE_BYTES, data: [
         this.seekHead,
         this.segmentInfo,
         this.tracksElement
@@ -427,7 +446,7 @@ var WebMMuxer = (() => {
       this.cues = { id: 475249515 /* Cues */, data: [] };
     }
     get segmentDataOffset() {
-      return this.target.offsets.get(this.segment) + 8;
+      return this.target.dataOffsets.get(this.segment);
     }
     addVideoChunk(chunk, meta, timestamp) {
       this.ensureNotFinalized();
@@ -514,7 +533,7 @@ var WebMMuxer = (() => {
           `Current Matroska cluster exceeded its maximum allowed length of ${MAX_CHUNK_LENGTH_MS} milliseconds. In order to produce a correct WebM file, you must pass in a video key frame at least every ${MAX_CHUNK_LENGTH_MS} milliseconds.`
         );
       }
-      let shouldCreateNewClusterFromKeyFrame = (chunk instanceof EncodedVideoChunk || !this.options.video) && chunk.type === "key" && msTime - this.currentClusterTimestamp >= 1e3;
+      let shouldCreateNewClusterFromKeyFrame = (chunk.trackNumber === VIDEO_TRACK_NUMBER || !this.options.video) && chunk.type === "key" && msTime - this.currentClusterTimestamp >= 1e3;
       if (!this.currentCluster || shouldCreateNewClusterFromKeyFrame) {
         this.createNewCluster(msTime);
       }
@@ -544,7 +563,7 @@ var WebMMuxer = (() => {
       if (this.currentCluster) {
         this.finalizeCurrentCluster();
       }
-      this.currentCluster = { id: 524531317 /* Cluster */, data: [
+      this.currentCluster = { id: 524531317 /* Cluster */, size: CLUSTER_SIZE_BYTES, data: [
         { id: 231 /* Timestamp */, data: timestamp }
       ] };
       this.target.writeEBML(this.currentCluster);
@@ -559,10 +578,10 @@ var WebMMuxer = (() => {
       ] });
     }
     finalizeCurrentCluster() {
-      let clusterSize = this.target.pos - (this.target.offsets.get(this.currentCluster) + 8);
+      let clusterSize = this.target.pos - this.target.dataOffsets.get(this.currentCluster);
       let endPos = this.target.pos;
       this.target.seek(this.target.offsets.get(this.currentCluster) + 4);
-      this.target.writeEBMLVarInt(clusterSize, 4);
+      this.target.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
       this.target.seek(endPos);
     }
     finalize() {
@@ -575,7 +594,7 @@ var WebMMuxer = (() => {
       let endPos = this.target.pos;
       let segmentSize = this.target.pos - this.segmentDataOffset;
       this.target.seek(this.target.offsets.get(this.segment) + 4);
-      this.target.writeEBMLVarInt(segmentSize, 4);
+      this.target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
       this.segmentDuration.data = new EBMLFloat64(this.duration);
       this.target.seek(this.target.offsets.get(this.segmentDuration));
       this.target.writeEBML(this.segmentDuration);

@@ -8,6 +8,8 @@ const AUDIO_TRACK_TYPE = 2;
 const MAX_CHUNK_LENGTH_MS = 2**15;
 const CODEC_PRIVATE_MAX_SIZE = 2**12;
 const APP_NAME = 'https://github.com/Vanilagy/webm-muxer';
+const SEGMENT_SIZE_BYTES = 6;
+const CLUSTER_SIZE_BYTES = 5;
 
 interface WebMMuxerOptions {
 	target: 'buffer' | FileSystemWritableFileStream,
@@ -199,7 +201,7 @@ class WebMMuxer {
 	}
 
 	private createSegment() {
-		let segment: EBML = { id: EBMLId.Segment, size: 5, data: [
+		let segment: EBML = { id: EBMLId.Segment, size: SEGMENT_SIZE_BYTES, data: [
 			this.seekHead as EBML,
 			this.segmentInfo,
 			this.tracksElement
@@ -214,8 +216,7 @@ class WebMMuxer {
 	}
 
 	private get segmentDataOffset() {
-		// +8 because we want to skip the ID and size fields
-		return this.target.offsets.get(this.segment) + 8;
+		return this.target.dataOffsets.get(this.segment);
 	}
 
 	public addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number) {
@@ -340,7 +341,7 @@ class WebMMuxer {
 		}
 
 		let shouldCreateNewClusterFromKeyFrame =
-			(chunk instanceof EncodedVideoChunk || !this.options.video) &&
+			(chunk.trackNumber === VIDEO_TRACK_NUMBER || !this.options.video) &&
 			chunk.type === 'key' &&
 			msTime - this.currentClusterTimestamp >= 1000;
 
@@ -390,7 +391,7 @@ class WebMMuxer {
 			this.finalizeCurrentCluster();
 		}
 
-		this.currentCluster = { id: EBMLId.Cluster, data: [
+		this.currentCluster = { id: EBMLId.Cluster, size: CLUSTER_SIZE_BYTES, data: [
 			{ id: EBMLId.Timestamp, data: timestamp }
 		] };
 		this.target.writeEBML(this.currentCluster);
@@ -411,12 +412,12 @@ class WebMMuxer {
 	}
 
 	private finalizeCurrentCluster() {
-		let clusterSize = this.target.pos - (this.target.offsets.get(this.currentCluster) + 8);
+		let clusterSize = this.target.pos - this.target.dataOffsets.get(this.currentCluster);
 		let endPos = this.target.pos;
 
 		// Write the size now that we know it
 		this.target.seek(this.target.offsets.get(this.currentCluster) + 4);
-		this.target.writeEBMLVarInt(clusterSize, 4);
+		this.target.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
 		this.target.seek(endPos);
 	}
 
@@ -434,7 +435,7 @@ class WebMMuxer {
 		// Write the Segment size
 		let segmentSize = this.target.pos - this.segmentDataOffset;
 		this.target.seek(this.target.offsets.get(this.segment) + 4);
-		this.target.writeEBMLVarInt(segmentSize, 4);
+		this.target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
 
 		// Write the duration of the media to the Segment
 		this.segmentDuration.data = new EBMLFloat64(this.duration);

@@ -155,6 +155,8 @@ your video frames and then encode the audio afterwards, the multiplexer will hav
 memory until the audio chunks start coming in. This might lead to memory exhaustion should your video be very long.
 When there is only one media track, this issue does not arrive. So, when muxing a multimedia file, make sure it is
 somewhat limited in size or the chunks are encoded in a somewhat interleaved way (like is the case for live media).
+### Size limits
+This library can mux WebM files up to a total size of ~4398 GB and with a Matroska Cluster size of ~34 GB.
 
 ## Implementation
 WebM files are a subset of the more general Matroska media container format. Matroska in turn uses a format known as

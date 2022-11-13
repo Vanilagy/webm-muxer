@@ -14,6 +14,8 @@ export abstract class WriteTarget {
 	 * rewrite/edit elements that were already added before, and to measure sizes of things.
 	 */
 	offsets = new WeakMap<EBML, number>();
+	/** Same as offsets, but stores position where the element's data starts (after ID and size fields). */
+	dataOffsets = new WeakMap<EBML, number>();
 	
 	/** Writes the given data to the target, at the current position. */
 	abstract write(data: Uint8Array): void;
@@ -35,9 +37,11 @@ export abstract class WriteTarget {
 
 		// Each case falls through:
 		switch (width) {
-			case 5:
+			case 6:
 				// Need to use division to access >32 bits of floating point var
-				this.helperView.setUint8(pos++, Math.floor(value / 2**32));
+				this.helperView.setUint8(pos++, (value / 2**40) | 0);
+			case 5:
+				this.helperView.setUint8(pos++, (value / 2**32) | 0);
 			case 4:
 				this.helperView.setUint8(pos++, value >> 24);
 			case 3:
@@ -82,7 +86,15 @@ export abstract class WriteTarget {
 				 * operations, so we need to do a division by 2^32 instead of a
 				 * right-shift of 32 to retain those top 3 bits
 				 */
-				this.helperView.setUint8(pos++, (1 << 3) | ((value / 4294967296) & 0x7));
+				this.helperView.setUint8(pos++, (1 << 3) | ((value / 2**32) & 0x7));
+				this.helperView.setUint8(pos++, value >> 24);
+				this.helperView.setUint8(pos++, value >> 16);
+				this.helperView.setUint8(pos++, value >> 8);
+				this.helperView.setUint8(pos++, value);
+				break;
+			case 6:
+				this.helperView.setUint8(pos++, (1 << 2) | ((value / 2**40) & 0x3));
+				this.helperView.setUint8(pos++, (value / 2**32) | 0);
 				this.helperView.setUint8(pos++, value >> 24);
 				this.helperView.setUint8(pos++, value >> 16);
 				this.helperView.setUint8(pos++, value >> 8);
@@ -114,16 +126,18 @@ export abstract class WriteTarget {
 
 			if (Array.isArray(data.data)) {
 				let sizePos = this.pos;
+				let sizeSize = data.size ?? 4;
 
-				this.seek(this.pos + 4);
+				this.seek(this.pos + sizeSize);
 
 				let startPos = this.pos;
+				this.dataOffsets.set(data, startPos);
 				this.writeEBML(data.data);
 
 				let size = this.pos - startPos;
 				let endPos = this.pos;
 				this.seek(sizePos);
-				this.writeEBMLVarInt(size, 4);
+				this.writeEBMLVarInt(size, sizeSize);
 				this.seek(endPos);
 			} else if (typeof data.data === 'number') {
 				let size = data.size ?? measureUnsignedInt(data.data);
@@ -156,8 +170,10 @@ const measureUnsignedInt = (value: number) => {
 		return 3;
 	} else if (value < 2**32) {
 		return 4;
-	} else {
+	} else if (value < 2**40) {
 		return 5;
+	} else {
+		return 6;
 	}
 };
 
@@ -174,8 +190,10 @@ const measureEBMLVarInt = (value: number) => {
 		return 3;
 	} else if (value < (1 << 28) - 1) {
 		return 4;
-	} else if (value < 2**35-1) {  // (can address 32GB)
+	} else if (value < 2**35-1) {
 		return 5;
+	} else if (value < 2**42-1) {
+		return 6;
 	} else {
 		throw new Error('EBML VINT size not supported ' + value);
 	}
