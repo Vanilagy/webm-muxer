@@ -1,7 +1,7 @@
 # webm-muxer - JavaScript WebM multiplexer
 
-![](https://img.shields.io/npm/v/webm-muxer)
-![](https://img.shields.io/bundlephobia/minzip/webm-muxer)
+[![](https://img.shields.io/npm/v/webm-muxer)](https://www.npmjs.com/package/webm-muxer)
+[![](https://img.shields.io/bundlephobia/minzip/webm-muxer)](https://bundlephobia.com/package/webm-muxer@1.0.7)
 
 The WebCodecs API provides low-level access to media codecs, but provides no way of actually packaging (multiplexing)
 the encoded media into a playable file. This project implements a WebM multiplexer in pure TypeScript, which is
