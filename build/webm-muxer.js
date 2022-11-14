@@ -226,11 +226,11 @@ var WebMMuxer = (() => {
     }
   };
   var FILE_CHUNK_SIZE = __pow(2, 24);
+  var MAX_CHUNKS_AT_ONCE = 2;
   var FileSystemWritableFileStreamWriteTarget = class extends WriteTarget {
     constructor(stream) {
       super();
       this.chunks = [];
-      this.toFlush = [];
       this.stream = stream;
     }
     write(data) {
@@ -252,8 +252,13 @@ var WebMMuxer = (() => {
       };
       insertSectionIntoFileChunk(chunk, section);
       if (chunk.written[0].start === 0 && chunk.written[0].end === FILE_CHUNK_SIZE) {
-        this.toFlush.push(chunk);
-        this.chunks.splice(chunkIndex, 1);
+        chunk.shouldFlush = true;
+      }
+      if (this.chunks.length > MAX_CHUNKS_AT_ONCE) {
+        for (let i = 0; i < this.chunks.length - 1; i++) {
+          this.chunks[i].shouldFlush = true;
+        }
+        this.flushChunks();
       }
       if (toWrite.byteLength < data.byteLength) {
         this.writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
@@ -264,32 +269,33 @@ var WebMMuxer = (() => {
       let chunk = {
         start,
         data: new Uint8Array(FILE_CHUNK_SIZE),
-        written: []
+        written: [],
+        shouldFlush: false
       };
       this.chunks.push(chunk);
-      return this.chunks.length - 1;
+      this.chunks.sort((a, b) => a.start - b.start);
+      return this.chunks.indexOf(chunk);
     }
-    flushChunks() {
-      if (this.toFlush.length > 0) {
-        for (let chunk of this.toFlush) {
-          for (let section of chunk.written) {
-            this.stream.write({
-              type: "write",
-              data: chunk.data.subarray(section.start, section.end),
-              position: chunk.start + section.start
-            });
-          }
+    flushChunks(force = false) {
+      for (let i = 0; i < this.chunks.length; i++) {
+        let chunk = this.chunks[i];
+        if (!chunk.shouldFlush && !force)
+          continue;
+        for (let section of chunk.written) {
+          this.stream.write({
+            type: "write",
+            data: chunk.data.subarray(section.start, section.end),
+            position: chunk.start + section.start
+          });
         }
-        this.toFlush.length = 0;
+        this.chunks.splice(i--, 1);
       }
     }
     seek(newPos) {
       this.pos = newPos;
     }
     finalize() {
-      this.toFlush.push(...this.chunks);
-      this.chunks.length = 0;
-      this.flushChunks();
+      this.flushChunks(true);
     }
   };
   var insertSectionIntoFileChunk = (chunk, section) => {

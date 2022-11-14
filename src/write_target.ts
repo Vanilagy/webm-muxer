@@ -240,11 +240,13 @@ export class ArrayBufferWriteTarget extends WriteTarget {
 }
 
 const FILE_CHUNK_SIZE = 2**24;
+const MAX_CHUNKS_AT_ONCE = 2;
 
 interface FileChunk {
 	start: number,
 	written: FileChunkSection[],
-	data: Uint8Array
+	data: Uint8Array,
+	shouldFlush: boolean
 }
 
 interface FileChunkSection {
@@ -264,7 +266,6 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 	 * A chunk is flushed to disk if all of its contents have been written.
 	 */
 	chunks: FileChunk[] = [];
-	toFlush: FileChunk[] = [];
 
 	constructor(stream: FileSystemWritableFileStream) {
 		super();
@@ -299,8 +300,16 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 
 		// Queue chunk for flushing to disk if it has been fully written to
 		if (chunk.written[0].start === 0 && chunk.written[0].end === FILE_CHUNK_SIZE) {
-			this.toFlush.push(chunk);
-			this.chunks.splice(chunkIndex, 1);
+			chunk.shouldFlush = true;
+		}
+
+		// Make sure we don't hold too many chunks in memory at once to keep memory usage down
+		if (this.chunks.length > MAX_CHUNKS_AT_ONCE) {
+			// Flush all but the last chunk
+			for (let i = 0; i < this.chunks.length-1; i++) {
+				this.chunks[i].shouldFlush = true;
+			}
+			this.flushChunks();
 		}
 
 		// If the data didn't fit in one chunk, recurse with the remaining datas
@@ -314,26 +323,28 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 		let chunk: FileChunk = {
 			start,
 			data: new Uint8Array(FILE_CHUNK_SIZE),
-			written: []
+			written: [],
+			shouldFlush: false
 		};
 		this.chunks.push(chunk);
+		this.chunks.sort((a, b) => a.start - b.start);
 
-		return this.chunks.length - 1;
+		return this.chunks.indexOf(chunk);
 	}
 
-	flushChunks() {
-		if (this.toFlush.length > 0) {
-			for (let chunk of this.toFlush) {
-				for (let section of chunk.written) {
-					this.stream.write({
-						type: 'write',
-						data: chunk.data.subarray(section.start, section.end),
-						position: chunk.start + section.start
-					});
-				}
-			}
+	flushChunks(force = false) {
+		for (let i = 0; i < this.chunks.length; i++) {
+			let chunk = this.chunks[i];
+			if (!chunk.shouldFlush && !force) continue;
 
-			this.toFlush.length = 0;
+			for (let section of chunk.written) {
+				this.stream.write({
+					type: 'write',
+					data: chunk.data.subarray(section.start, section.end),
+					position: chunk.start + section.start
+				});
+			}
+			this.chunks.splice(i--, 1);
 		}
 	}
 
@@ -342,10 +353,7 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 	}
 
 	finalize() {
-		this.toFlush.push(...this.chunks);
-		this.chunks.length = 0;
-
-		this.flushChunks();
+		this.flushChunks(true);
 	}
 }
 
