@@ -70,6 +70,7 @@ class WebMMuxer {
 	private audioChunkQueue: InternalMediaChunk[] = [];
 	private lastVideoTimestamp = 0;
 	private lastAudioTimestamp = 0;
+	private colorSpace: VideoColorSpaceInit;
 	private finalized = false;
 
 	constructor(options: WebMMuxerOptions) {
@@ -223,7 +224,10 @@ class WebMMuxer {
 		this.ensureNotFinalized();
 		if (!this.options.video) throw new Error("No video track declared.");
 
+		this.writeVideoDecoderConfig(meta);
+
 		let internalChunk = this.createInternalChunk(chunk, timestamp);
+		if (this.options.video.codec === 'V_VP9') this.fixVP9ColorSpace(internalChunk);
 
 		/**
 		 * Ok, so the algorithm used to insert video and audio blocks (if both are present) is one where we want to
@@ -248,11 +252,14 @@ class WebMMuxer {
 		} else {
 			this.videoChunkQueue.push(internalChunk);
 		}
+	}
 
+	private writeVideoDecoderConfig(meta: EncodedVideoChunkMetadata) {
 		// Write possible video decoder metadata to the file
 		if (meta.decoderConfig) {
 			if (meta.decoderConfig.colorSpace) {
 				let colorSpace = meta.decoderConfig.colorSpace;
+				this.colorSpace = colorSpace;
 
 				this.colourElement.data = [
 					{ id: EBMLId.MatrixCoefficients, data: {
@@ -284,6 +291,41 @@ class WebMMuxer {
 				this.writeCodecPrivate(this.videoCodecPrivate, meta.decoderConfig.description);
 			}
 		}
+	}
+
+	/** Due to a bug in Chrome, VP9 streams often lack color space information. This method patches in that information. */
+	// http://downloads.webmproject.org/docs/vp9/vp9-bitstream_superframe-and-uncompressed-header_v1.0.pdf
+	private fixVP9ColorSpace(chunk: InternalMediaChunk) {
+		if (chunk.type !== 'key') return;
+		if (!this.colorSpace) return;
+
+		let i = 0;
+		// Check if it's a "superframe"
+		if (readBits(chunk.data, 0, 2) !== 0b10) return; i += 2;
+
+		let profile = (readBits(chunk.data, i+1, i+2) << 1) + readBits(chunk.data, i+0, i+1); i += 2;
+		if (profile === 3) i++;
+
+		let showExistingFrame = readBits(chunk.data, i+0, i+1); i++;
+		if (showExistingFrame) return;
+
+		let frameType = readBits(chunk.data, i+0, i+1); i++;
+		if (frameType !== 0) return; // Just to be sure
+
+		i += 2;
+
+		let syncCode = readBits(chunk.data, i+0, i+24); i += 24;
+		if (syncCode !== 0x498342) return;
+
+		if (profile >= 2) i++;
+
+		let colorSpaceID = {
+			'rgb': 7,
+			'bt709': 2,
+			'bt470bg': 1,
+			'smpte170m': 3
+		}[this.colorSpace.matrix];
+		writeBits(chunk.data, i+0, i+3, colorSpaceID);
 	}
 	
 	public addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number) {
@@ -473,3 +515,30 @@ class WebMMuxer {
 }
 
 export default WebMMuxer;
+
+const readBits = (bytes: Uint8Array, start: number, end: number) => {
+	let result = 0;
+
+	for (let i = start; i < end; i++) {
+		let byteIndex = Math.floor(i / 8);
+		let byte = bytes[byteIndex];
+		let bitIndex = 0b111 - (i & 0b111);
+		let bit = (byte & (1 << bitIndex)) >> bitIndex;
+
+		result <<= 1;
+		result |= bit;
+	}
+
+	return result;
+};
+const writeBits = (bytes: Uint8Array, start: number, end: number, value: number) => {
+	for (let i = start; i < end; i++) {
+		let byteIndex = Math.floor(i / 8);
+		let byte = bytes[byteIndex];
+		let bitIndex = 0b111 - (i & 0b111);
+
+		byte &= ~(1 << bitIndex);
+		byte |= ((value & (1 << (end - i - 1))) >> (end - i - 1)) << bitIndex;
+		bytes[byteIndex] = byte;
+	}
+};

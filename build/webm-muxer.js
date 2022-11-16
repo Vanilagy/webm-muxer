@@ -458,7 +458,10 @@ var WebMMuxer = (() => {
       this.ensureNotFinalized();
       if (!this.options.video)
         throw new Error("No video track declared.");
+      this.writeVideoDecoderConfig(meta);
       let internalChunk = this.createInternalChunk(chunk, timestamp);
+      if (this.options.video.codec === "V_VP9")
+        this.fixVP9ColorSpace(internalChunk);
       this.lastVideoTimestamp = internalChunk.timestamp;
       while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= internalChunk.timestamp) {
         let audioChunk = this.audioChunkQueue.shift();
@@ -469,9 +472,12 @@ var WebMMuxer = (() => {
       } else {
         this.videoChunkQueue.push(internalChunk);
       }
+    }
+    writeVideoDecoderConfig(meta) {
       if (meta.decoderConfig) {
         if (meta.decoderConfig.colorSpace) {
           let colorSpace = meta.decoderConfig.colorSpace;
+          this.colorSpace = colorSpace;
           this.colourElement.data = [
             { id: 21937 /* MatrixCoefficients */, data: {
               "rgb": 1,
@@ -500,6 +506,42 @@ var WebMMuxer = (() => {
           this.writeCodecPrivate(this.videoCodecPrivate, meta.decoderConfig.description);
         }
       }
+    }
+    fixVP9ColorSpace(chunk) {
+      if (chunk.type !== "key")
+        return;
+      if (!this.colorSpace)
+        return;
+      let i = 0;
+      if (readBits(chunk.data, 0, 2) !== 2)
+        return;
+      i += 2;
+      let profile = (readBits(chunk.data, i + 1, i + 2) << 1) + readBits(chunk.data, i + 0, i + 1);
+      i += 2;
+      if (profile === 3)
+        i++;
+      let showExistingFrame = readBits(chunk.data, i + 0, i + 1);
+      i++;
+      if (showExistingFrame)
+        return;
+      let frameType = readBits(chunk.data, i + 0, i + 1);
+      i++;
+      if (frameType !== 0)
+        return;
+      i += 2;
+      let syncCode = readBits(chunk.data, i + 0, i + 24);
+      i += 24;
+      if (syncCode !== 4817730)
+        return;
+      if (profile >= 2)
+        i++;
+      let colorSpaceID = {
+        "rgb": 7,
+        "bt709": 2,
+        "bt470bg": 1,
+        "smpte170m": 3
+      }[this.colorSpace.matrix];
+      writeBits(chunk.data, i + 0, i + 3, colorSpaceID);
     }
     addAudioChunk(chunk, meta, timestamp) {
       this.ensureNotFinalized();
@@ -625,6 +667,28 @@ var WebMMuxer = (() => {
     }
   };
   var main_default = WebMMuxer;
+  var readBits = (bytes, start, end) => {
+    let result = 0;
+    for (let i = start; i < end; i++) {
+      let byteIndex = Math.floor(i / 8);
+      let byte = bytes[byteIndex];
+      let bitIndex = 7 - (i & 7);
+      let bit = (byte & 1 << bitIndex) >> bitIndex;
+      result <<= 1;
+      result |= bit;
+    }
+    return result;
+  };
+  var writeBits = (bytes, start, end, value) => {
+    for (let i = start; i < end; i++) {
+      let byteIndex = Math.floor(i / 8);
+      let byte = bytes[byteIndex];
+      let bitIndex = 7 - (i & 7);
+      byte &= ~(1 << bitIndex);
+      byte |= (value & 1 << end - i - 1) >> end - i - 1 << bitIndex;
+      bytes[byteIndex] = byte;
+    }
+  };
   return __toCommonJS(main_exports);
 })();
 WebMMuxer = WebMMuxer.default;
