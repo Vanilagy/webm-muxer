@@ -293,7 +293,8 @@ class WebMMuxer {
 		}
 	}
 
-	/** Due to a bug in Chrome, VP9 streams often lack color space information. This method patches in that information. */
+	/** Due to [a bug in Chromium](https://bugs.chromium.org/p/chromium/issues/detail?id=1377842), VP9 streams often
+	 * lack color space information. This method patches in that information. */
 	// http://downloads.webmproject.org/docs/vp9/vp9-bitstream_superframe-and-uncompressed-header_v1.0.pdf
 	private fixVP9ColorSpace(chunk: InternalMediaChunk) {
 		if (chunk.type !== 'key') return;
