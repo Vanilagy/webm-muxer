@@ -81,7 +81,7 @@ let fileHandle = await window.showSaveFilePicker({
     suggestedName: `video.webm`,
     types: [{
         description: 'Video File',
-        accept: {'video/webm': ['.webm']}
+        accept: { 'video/webm': ['.webm'] }
     }],
 });
 let fileWritableStream = await fileHandle.createWritable();
