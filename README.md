@@ -49,7 +49,7 @@ interface WebMMuxerOptions {
     video?: {
         codec: string,
         width: number,
-        height: number
+        height: number,
         frameRate?: number // Optional, adds metadata to the file
     },
     audio?: {
