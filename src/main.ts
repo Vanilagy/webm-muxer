@@ -221,12 +221,19 @@ class WebMMuxer {
 	}
 
 	public addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number) {
+		let data = new Uint8Array(chunk.byteLength);
+		chunk.copyTo(data);
+
+		this.addVideoChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
+	}
+	
+	public addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata) {
 		this.ensureNotFinalized();
 		if (!this.options.video) throw new Error("No video track declared.");
 
-		this.writeVideoDecoderConfig(meta);
+		if (meta) this.writeVideoDecoderConfig(meta);
 
-		let internalChunk = this.createInternalChunk(chunk, timestamp);
+		let internalChunk = this.createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
 		if (this.options.video.codec === 'V_VP9') this.fixVP9ColorSpace(internalChunk);
 
 		/**
@@ -328,12 +335,19 @@ class WebMMuxer {
 		}[this.colorSpace.matrix];
 		writeBits(chunk.data, i+0, i+3, colorSpaceID);
 	}
-	
+
 	public addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number) {
+		let data = new Uint8Array(chunk.byteLength);
+		chunk.copyTo(data);
+
+		this.addAudioChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
+	}
+	
+	public addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata) {
 		this.ensureNotFinalized();
 		if (!this.options.audio) throw new Error("No audio track declared.");
 
-		let internalChunk = this.createInternalChunk(chunk, timestamp);
+		let internalChunk = this.createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
 
 		// Algorithm explained in `addVideoChunk`
 		this.lastAudioTimestamp = internalChunk.timestamp;
@@ -350,21 +364,18 @@ class WebMMuxer {
 		}
 
 		// Write possible audio decoder metadata to the file
-		if (meta.decoderConfig) {
+		if (meta?.decoderConfig) {
 			this.writeCodecPrivate(this.audioCodecPrivate, meta.decoderConfig.description);
 		}
 	}
 
 	/** Converts a read-only external chunk into an internal one for easier use. */
-	private createInternalChunk(externalChunk: EncodedVideoChunk | EncodedAudioChunk, timestamp?: number) {
-		let data = new Uint8Array(externalChunk.byteLength);
-		externalChunk.copyTo(data);
-
+	private createInternalChunk(data: Uint8Array, type: 'key' | 'delta', timestamp: number, trackNumber: number) {
 		let internalChunk: InternalMediaChunk = {
 			data,
-			timestamp: timestamp ?? externalChunk.timestamp,
-			type: externalChunk.type,
-			trackNumber: externalChunk instanceof EncodedVideoChunk ? VIDEO_TRACK_NUMBER : AUDIO_TRACK_NUMBER
+			type,
+			timestamp,
+			trackNumber
 		};
 
 		return internalChunk;

@@ -455,11 +455,17 @@ var WebMMuxer = (() => {
       return this.target.dataOffsets.get(this.segment);
     }
     addVideoChunk(chunk, meta, timestamp) {
+      let data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      this.addVideoChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
+    }
+    addVideoChunkRaw(data, type, timestamp, meta) {
       this.ensureNotFinalized();
       if (!this.options.video)
         throw new Error("No video track declared.");
-      this.writeVideoDecoderConfig(meta);
-      let internalChunk = this.createInternalChunk(chunk, timestamp);
+      if (meta)
+        this.writeVideoDecoderConfig(meta);
+      let internalChunk = this.createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
       if (this.options.video.codec === "V_VP9")
         this.fixVP9ColorSpace(internalChunk);
       this.lastVideoTimestamp = internalChunk.timestamp;
@@ -544,10 +550,15 @@ var WebMMuxer = (() => {
       writeBits(chunk.data, i + 0, i + 3, colorSpaceID);
     }
     addAudioChunk(chunk, meta, timestamp) {
+      let data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      this.addAudioChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
+    }
+    addAudioChunkRaw(data, type, timestamp, meta) {
       this.ensureNotFinalized();
       if (!this.options.audio)
         throw new Error("No audio track declared.");
-      let internalChunk = this.createInternalChunk(chunk, timestamp);
+      let internalChunk = this.createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
       this.lastAudioTimestamp = internalChunk.timestamp;
       while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= internalChunk.timestamp) {
         let videoChunk = this.videoChunkQueue.shift();
@@ -558,18 +569,16 @@ var WebMMuxer = (() => {
       } else {
         this.audioChunkQueue.push(internalChunk);
       }
-      if (meta.decoderConfig) {
+      if (meta == null ? void 0 : meta.decoderConfig) {
         this.writeCodecPrivate(this.audioCodecPrivate, meta.decoderConfig.description);
       }
     }
-    createInternalChunk(externalChunk, timestamp) {
-      let data = new Uint8Array(externalChunk.byteLength);
-      externalChunk.copyTo(data);
+    createInternalChunk(data, type, timestamp, trackNumber) {
       let internalChunk = {
         data,
-        timestamp: timestamp != null ? timestamp : externalChunk.timestamp,
-        type: externalChunk.type,
-        trackNumber: externalChunk instanceof EncodedVideoChunk ? VIDEO_TRACK_NUMBER : AUDIO_TRACK_NUMBER
+        type,
+        timestamp,
+        trackNumber
       };
       return internalChunk;
     }

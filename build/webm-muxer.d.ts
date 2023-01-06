@@ -3,7 +3,7 @@ declare interface WebMMuxerOptions {
 	video?: {
 		codec: string,
 		width: number,
-		height: number
+		height: number,
 		frameRate?: number
 	},
 	audio?: {
@@ -20,6 +20,10 @@ declare global {
 	
 		addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number): void;	
 		addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number): void;
+
+		addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata): void;
+		addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata): void;
+
 		finalize(): ArrayBuffer | null;
 	}
 }
