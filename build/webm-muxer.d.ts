@@ -4,10 +4,10 @@
 declare interface WebMMuxerOptions {
 	/**
 	 * Specifies where the muxed WebM file is written to.
-	 * 
+	 *
 	 * When using `'buffer'`, the muxed file is simply written to a buffer in memory, which is then returned by the
 	 * muxer's `finalize` method.
-	 * 
+	 *
 	 * If the target is of type `FileSystemWritableFileStream`, the file will be written directly to disk as it is being
 	 * muxed. The benefit of this target is the ability to write out very large files, easily exceeding the RAM of the
 	 * machine being used.
@@ -71,7 +71,7 @@ declare global {
 		 * @param options Specifies configuration and metadata for the WebM file.
 		 */
 		constructor(options: WebMMuxerOptions);
-	
+
 		/**
 		 * Adds a new, encoded video chunk to the WebM file.
 		 * @param chunk The encoded video chunk. Can be obtained through a `VideoEncoder`.
@@ -79,7 +79,7 @@ declare global {
 		 * @param timestamp Optionally, the timestamp to use for the video chunk. When not provided, it will use the one
 		 * specified in `chunk`.
 		 */
-		addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number): void;	
+		addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number): void;
 		/**
 		 * Adds a new, encoded audio chunk to the WebM file.
 		 * @param chunk The encoded audio chunk. Can be obtained through an `AudioEncoder`.
@@ -97,7 +97,12 @@ declare global {
 		 * @param timestamp The timestamp of the video chunk.
 		 * @param meta Optionally, any encoder metadata.
 		 */
-		addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata): void;
+		addVideoChunkRaw(
+			data: Uint8Array,
+			type: 'key' | 'delta',
+			timestamp: number,
+			meta?: EncodedVideoChunkMetadata
+		): void;
 		/**
 		 * Adds a raw audio chunk to the WebM file. This method should be used when the encoded audio is not obtained
 		 * through an `AudioEncoder` but through some other means, where no instance of `EncodedAudioChunk`is available.
@@ -106,7 +111,12 @@ declare global {
 		 * @param timestamp The timestamp of the audio chunk.
 		 * @param meta Optionally, any encoder metadata.
 		 */
-		addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata): void;
+		addAudioChunkRaw(
+			data: Uint8Array,
+			type: 'key' | 'delta',
+			timestamp: number,
+			meta?: EncodedAudioChunkMetadata
+		): void;
 
 		/**
 		 * Is to be called after all media chunks have been added to the muxer. Make sure to call and await the `flush`

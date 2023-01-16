@@ -170,7 +170,7 @@ class WebMMuxer {
 				{ id: EBMLId.CodecID, data: this.#options.video.codec },
 				this.#videoCodecPrivate,
 				(this.#options.video.frameRate ?
-					{ id: EBMLId.DefaultDuration, data: 1e9/this.#options.video.frameRate } : 
+					{ id: EBMLId.DefaultDuration, data: 1e9/this.#options.video.frameRate } :
 					null
 				),
 				{ id: EBMLId.Video, data: [
@@ -193,7 +193,7 @@ class WebMMuxer {
 					{ id: EBMLId.SamplingFrequency, data: new EBMLFloat32(this.#options.audio.sampleRate) },
 					{ id: EBMLId.Channels, data: this.#options.audio.numberOfChannels},
 					(this.#options.audio.bitDepth ?
-						{ id: EBMLId.BitDepth, data: this.#options.audio.bitDepth } : 
+						{ id: EBMLId.BitDepth, data: this.#options.audio.bitDepth } :
 						null
 					)
 				].filter(Boolean) }
@@ -226,7 +226,7 @@ class WebMMuxer {
 
 		this.addVideoChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
 	}
-	
+
 	addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata) {
 		this.#ensureNotFinalized();
 		if (!this.#options.video) throw new Error("No video track declared.");
@@ -342,7 +342,7 @@ class WebMMuxer {
 
 		this.addAudioChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
 	}
-	
+
 	addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata) {
 		this.#ensureNotFinalized();
 		if (!this.#options.audio) throw new Error("No audio track declared.");
@@ -422,7 +422,7 @@ class WebMMuxer {
 		this.#duration = Math.max(this.#duration, msTime);
 	}
 
-	/** 
+	/**
 	 * Replaces a placeholder EBML element with actual CodecPrivate data, then pads it with a Void Element of
 	 * necessary size.
 	 */
@@ -434,7 +434,7 @@ class WebMMuxer {
 			{ id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) },
 			{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
 		];
-		
+
 		this.#target.writeEBML(element);
 		this.#target.seek(endPos);
 	}

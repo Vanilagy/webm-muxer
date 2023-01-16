@@ -42,7 +42,7 @@
 	});
 	videoEncoder.configure({
 		codec: 'vp09.00.10.08',
-		width: 1280, 
+		width: 1280,
 		height: 720,
 		bitrate: 1e6
 	});
@@ -91,7 +91,7 @@
 
 	await fileWritableStream.close();
 
-	console.log("Done")
+	console.log("Done");
 
 	/*
 

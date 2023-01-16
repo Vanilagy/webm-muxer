@@ -65,7 +65,7 @@ const startRecording = async () => {
 				// We therefore manually set the timestamp of the chunk, using the first chunk's timestamp as the
 				// zero point.
 				if (firstAudioTimestamp === null) firstAudioTimestamp = chunk.timestamp;
-	
+
 				muxer.addAudioChunk(chunk, meta, chunk.timestamp - firstAudioTimestamp);
 			},
 			error: e => console.error(e)

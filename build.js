@@ -12,7 +12,7 @@ const config = {
 	footer: {
 		js: 'WebMMuxer = WebMMuxer.default;\nif (typeof module === "object" && typeof module.exports === "object") module.exports = WebMMuxer;'
 	}
-}
+};
 
 esbuild.build({
 	...config,

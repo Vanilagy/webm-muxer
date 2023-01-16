@@ -1,7 +1,7 @@
 import { EBML, EBMLFloat32, EBMLFloat64 } from "./ebml";
 
 /**
- * A WriteTarget defines a generic target to which data (bytes) can be written in a simple manner. It provides utility 
+ * A WriteTarget defines a generic target to which data (bytes) can be written in a simple manner. It provides utility
  * methods for writing EBML-based data (the format Matroska or its subset, WebM, uses).
  */
 export abstract class WriteTarget {
@@ -16,7 +16,7 @@ export abstract class WriteTarget {
 	offsets = new WeakMap<EBML, number>();
 	/** Same as offsets, but stores position where the element's data starts (after ID and size fields). */
 	dataOffsets = new WeakMap<EBML, number>();
-	
+
 	/** Writes the given data to the target, at the current position. */
 	abstract write(data: Uint8Array): void;
 	/** Sets the current position for future writes to a new one. */
@@ -56,7 +56,7 @@ export abstract class WriteTarget {
 		}
 
 		this.write(this.helper.subarray(0, pos));
-	};
+	}
 
 	writeEBMLVarInt(value: number, width: number = measureEBMLVarInt(value)) {
 		let pos = 0;
@@ -105,7 +105,7 @@ export abstract class WriteTarget {
 		}
 
 		this.write(this.helper.subarray(0, pos));
-	};
+	}
 
 	// Assumes the string is ASCII
 	writeString(str: string) {
