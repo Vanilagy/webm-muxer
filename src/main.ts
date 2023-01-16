@@ -35,12 +35,12 @@ interface InternalMediaChunk {
 }
 
 class WebMMuxer {
-	private target: WriteTarget;
-	private options: WebMMuxerOptions;
+	#target: WriteTarget;
+	#options: WebMMuxerOptions;
 
-	private segment: EBMLElement;
-	private segmentInfo: EBMLElement;
-	private seekHead: {
+	#segment: EBMLElement;
+	#segmentInfo: EBMLElement;
+	#seekHead: {
 		id: number,
 		data: {
 			id: number,
@@ -55,46 +55,46 @@ class WebMMuxer {
 			})[]
 		}[]
 	};
-	private tracksElement: EBMLElement;
-	private segmentDuration: EBMLElement;
-	private colourElement: EBMLElement;
-	private videoCodecPrivate: EBML;
-	private audioCodecPrivate: EBML;
-	private cues: EBMLElement;
+	#tracksElement: EBMLElement;
+	#segmentDuration: EBMLElement;
+	#colourElement: EBMLElement;
+	#videoCodecPrivate: EBML;
+	#audioCodecPrivate: EBML;
+	#cues: EBMLElement;
 
-	private currentCluster: EBMLElement;
-	private currentClusterTimestamp: number;
+	#currentCluster: EBMLElement;
+	#currentClusterTimestamp: number;
 
-	private duration = 0;
-	private videoChunkQueue: InternalMediaChunk[] = [];
-	private audioChunkQueue: InternalMediaChunk[] = [];
-	private lastVideoTimestamp = 0;
-	private lastAudioTimestamp = 0;
-	private colorSpace: VideoColorSpaceInit;
-	private finalized = false;
+	#duration = 0;
+	#videoChunkQueue: InternalMediaChunk[] = [];
+	#audioChunkQueue: InternalMediaChunk[] = [];
+	#lastVideoTimestamp = 0;
+	#lastAudioTimestamp = 0;
+	#colorSpace: VideoColorSpaceInit;
+	#finalized = false;
 
 	constructor(options: WebMMuxerOptions) {
-		this.options = options;
+		this.#options = options;
 
 		if (options.target === 'buffer') {
-			this.target = new ArrayBufferWriteTarget();
+			this.#target = new ArrayBufferWriteTarget();
 		} else {
-			this.target = new FileSystemWritableFileStreamWriteTarget(options.target);
+			this.#target = new FileSystemWritableFileStreamWriteTarget(options.target);
 		}
 
-		this.createFileHeader();
+		this.#createFileHeader();
 	}
 
-	private createFileHeader() {
-		this.writeEBMLHeader();
-		this.createSeekHead();
-		this.createSegmentInfo();
-		this.createTracks();
-		this.createSegment();
-		this.createCues();
+	#createFileHeader() {
+		this.#writeEBMLHeader();
+		this.#createSeekHead();
+		this.#createSegmentInfo();
+		this.#createTracks();
+		this.#createSegment();
+		this.#createCues();
 	}
 
-	private writeEBMLHeader() {
+	#writeEBMLHeader() {
 		let ebmlHeader: EBML = { id: EBMLId.EBML, data: [
 			{ id: EBMLId.EBMLVersion, data: 1 },
 			{ id: EBMLId.EBMLReadVersion, data: 1 },
@@ -104,14 +104,14 @@ class WebMMuxer {
 			{ id: EBMLId.DocTypeVersion, data: 2 },
 			{ id: EBMLId.DocTypeReadVersion, data: 2 }
 		] };
-		this.target.writeEBML(ebmlHeader);
+		this.#target.writeEBML(ebmlHeader);
 	}
 
 	/**
 	 * Creates a SeekHead element which is positioned near the start of the file and allows the media player to seek to
 	 * relevant sections more easily. Since we don't know the positions of those sections yet, we'll set them later.
 	 */
-	private createSeekHead() {
+	#createSeekHead() {
 		const kaxCues = new Uint8Array([ 0x1c, 0x53, 0xbb, 0x6b ]);
 		const kaxInfo = new Uint8Array([ 0x15, 0x49, 0xa9, 0x66 ]);
 		const kaxTracks = new Uint8Array([ 0x16, 0x54, 0xae, 0x6b ]);
@@ -130,12 +130,12 @@ class WebMMuxer {
 				{ id: EBMLId.SeekPosition, size: 5, data: 0 }
 			] }
 		] };
-		this.seekHead = seekHead;
+		this.#seekHead = seekHead;
 	}
 
-	private createSegmentInfo() {
+	#createSegmentInfo() {
 		let segmentDuration: EBML = { id: EBMLId.Duration, data: new EBMLFloat64(0) };
-		this.segmentDuration = segmentDuration;
+		this.#segmentDuration = segmentDuration;
 
 		let segmentInfo: EBML = { id: EBMLId.Info, data: [
 			{ id: EBMLId.TimestampScale, data: 1e6 },
@@ -143,16 +143,16 @@ class WebMMuxer {
 			{ id: EBMLId.WritingApp, data: APP_NAME },
 			segmentDuration
 		] };
-		this.segmentInfo = segmentInfo;
+		this.#segmentInfo = segmentInfo;
 	}
 
-	private createTracks() {
+	#createTracks() {
 		let tracksElement = { id: EBMLId.Tracks, data: [] as EBML[] };
-		this.tracksElement = tracksElement;
+		this.#tracksElement = tracksElement;
 
-		if (this.options.video) {
+		if (this.#options.video) {
 			// Reserve 4 kiB for the CodecPrivate element
-			this.videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+			this.#videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
 
 			let colourElement = { id: EBMLId.Colour, data: [
 				// All initially unspecified
@@ -161,39 +161,39 @@ class WebMMuxer {
 				{ id: EBMLId.Primaries, data: 2 },
 				{ id: EBMLId.Range, data: 0 }
 			] };
-			this.colourElement = colourElement;
+			this.#colourElement = colourElement;
 
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackType, data: VIDEO_TRACK_TYPE },
-				{ id: EBMLId.CodecID, data: this.options.video.codec },
-				this.videoCodecPrivate,
-				(this.options.video.frameRate ?
-					{ id: EBMLId.DefaultDuration, data: 1e9/this.options.video.frameRate } : 
+				{ id: EBMLId.CodecID, data: this.#options.video.codec },
+				this.#videoCodecPrivate,
+				(this.#options.video.frameRate ?
+					{ id: EBMLId.DefaultDuration, data: 1e9/this.#options.video.frameRate } : 
 					null
 				),
 				{ id: EBMLId.Video, data: [
-					{ id: EBMLId.PixelWidth, data: this.options.video.width },
-					{ id: EBMLId.PixelHeight, data: this.options.video.height },
+					{ id: EBMLId.PixelWidth, data: this.#options.video.width },
+					{ id: EBMLId.PixelHeight, data: this.#options.video.height },
 					colourElement
 				] }
 			].filter(Boolean) });
 		}
-		if (this.options.audio) {
-			this.audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+		if (this.#options.audio) {
+			this.#audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
 
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: AUDIO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: AUDIO_TRACK_NUMBER },
 				{ id: EBMLId.TrackType, data: AUDIO_TRACK_TYPE },
-				{ id: EBMLId.CodecID, data: this.options.audio.codec },
-				this.audioCodecPrivate,
+				{ id: EBMLId.CodecID, data: this.#options.audio.codec },
+				this.#audioCodecPrivate,
 				{ id: EBMLId.Audio, data: [
-					{ id: EBMLId.SamplingFrequency, data: new EBMLFloat32(this.options.audio.sampleRate) },
-					{ id: EBMLId.Channels, data: this.options.audio.numberOfChannels},
-					(this.options.audio.bitDepth ?
-						{ id: EBMLId.BitDepth, data: this.options.audio.bitDepth } : 
+					{ id: EBMLId.SamplingFrequency, data: new EBMLFloat32(this.#options.audio.sampleRate) },
+					{ id: EBMLId.Channels, data: this.#options.audio.numberOfChannels},
+					(this.#options.audio.bitDepth ?
+						{ id: EBMLId.BitDepth, data: this.#options.audio.bitDepth } : 
 						null
 					)
 				].filter(Boolean) }
@@ -201,40 +201,40 @@ class WebMMuxer {
 		}
 	}
 
-	private createSegment() {
+	#createSegment() {
 		let segment: EBML = { id: EBMLId.Segment, size: SEGMENT_SIZE_BYTES, data: [
-			this.seekHead as EBML,
-			this.segmentInfo,
-			this.tracksElement
+			this.#seekHead as EBML,
+			this.#segmentInfo,
+			this.#tracksElement
 		] };
-		this.segment = segment;
+		this.#segment = segment;
 
-		this.target.writeEBML(segment);
+		this.#target.writeEBML(segment);
 	}
 
-	private createCues() {
-		this.cues = { id: EBMLId.Cues, data: [] };
+	#createCues() {
+		this.#cues = { id: EBMLId.Cues, data: [] };
 	}
 
-	private get segmentDataOffset() {
-		return this.target.dataOffsets.get(this.segment);
+	get #segmentDataOffset() {
+		return this.#target.dataOffsets.get(this.#segment);
 	}
 
-	public addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number) {
+	addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number) {
 		let data = new Uint8Array(chunk.byteLength);
 		chunk.copyTo(data);
 
 		this.addVideoChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
 	}
 	
-	public addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata) {
-		this.ensureNotFinalized();
-		if (!this.options.video) throw new Error("No video track declared.");
+	addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata) {
+		this.#ensureNotFinalized();
+		if (!this.#options.video) throw new Error("No video track declared.");
 
-		if (meta) this.writeVideoDecoderConfig(meta);
+		if (meta) this.#writeVideoDecoderConfig(meta);
 
-		let internalChunk = this.createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
-		if (this.options.video.codec === 'V_VP9') this.fixVP9ColorSpace(internalChunk);
+		let internalChunk = this.#createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
+		if (this.#options.video.codec === 'V_VP9') this.#fixVP9ColorSpace(internalChunk);
 
 		/**
 		 * Ok, so the algorithm used to insert video and audio blocks (if both are present) is one where we want to
@@ -245,30 +245,30 @@ class WebMMuxer {
 		 * chunks remaining in the queues also be flushed to the file.
 		 */
 
-		this.lastVideoTimestamp = internalChunk.timestamp;
+		this.#lastVideoTimestamp = internalChunk.timestamp;
 
 		// Write all audio chunks with a timestamp smaller than the incoming video chunk
-		while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= internalChunk.timestamp) {
-			let audioChunk = this.audioChunkQueue.shift();
-			this.writeSimpleBlock(audioChunk);
+		while (this.#audioChunkQueue.length > 0 && this.#audioChunkQueue[0].timestamp <= internalChunk.timestamp) {
+			let audioChunk = this.#audioChunkQueue.shift();
+			this.#writeSimpleBlock(audioChunk);
 		}
 
 		// Depending on the last audio chunk, either write the video chunk to the file or enqueue it
-		if (!this.options.audio || internalChunk.timestamp <= this.lastAudioTimestamp) {
-			this.writeSimpleBlock(internalChunk);
+		if (!this.#options.audio || internalChunk.timestamp <= this.#lastAudioTimestamp) {
+			this.#writeSimpleBlock(internalChunk);
 		} else {
-			this.videoChunkQueue.push(internalChunk);
+			this.#videoChunkQueue.push(internalChunk);
 		}
 	}
 
-	private writeVideoDecoderConfig(meta: EncodedVideoChunkMetadata) {
+	#writeVideoDecoderConfig(meta: EncodedVideoChunkMetadata) {
 		// Write possible video decoder metadata to the file
 		if (meta.decoderConfig) {
 			if (meta.decoderConfig.colorSpace) {
 				let colorSpace = meta.decoderConfig.colorSpace;
-				this.colorSpace = colorSpace;
+				this.#colorSpace = colorSpace;
 
-				this.colourElement.data = [
+				this.#colourElement.data = [
 					{ id: EBMLId.MatrixCoefficients, data: {
 						'rgb': 1,
 						'bt709': 1,
@@ -288,14 +288,14 @@ class WebMMuxer {
 					{ id: EBMLId.Range, data: [1, 2][Number(colorSpace.fullRange)] }
 				];
 
-				let endPos = this.target.pos;
-				this.target.seek(this.target.offsets.get(this.colourElement));
-				this.target.writeEBML(this.colourElement);
-				this.target.seek(endPos);
+				let endPos = this.#target.pos;
+				this.#target.seek(this.#target.offsets.get(this.#colourElement));
+				this.#target.writeEBML(this.#colourElement);
+				this.#target.seek(endPos);
 			}
 
 			if (meta.decoderConfig.description) {
-				this.writeCodecPrivate(this.videoCodecPrivate, meta.decoderConfig.description);
+				this.#writeCodecPrivate(this.#videoCodecPrivate, meta.decoderConfig.description);
 			}
 		}
 	}
@@ -303,9 +303,9 @@ class WebMMuxer {
 	/** Due to [a bug in Chromium](https://bugs.chromium.org/p/chromium/issues/detail?id=1377842), VP9 streams often
 	 * lack color space information. This method patches in that information. */
 	// http://downloads.webmproject.org/docs/vp9/vp9-bitstream_superframe-and-uncompressed-header_v1.0.pdf
-	private fixVP9ColorSpace(chunk: InternalMediaChunk) {
+	#fixVP9ColorSpace(chunk: InternalMediaChunk) {
 		if (chunk.type !== 'key') return;
-		if (!this.colorSpace) return;
+		if (!this.#colorSpace) return;
 
 		let i = 0;
 		// Check if it's a "superframe"
@@ -332,45 +332,45 @@ class WebMMuxer {
 			'bt709': 2,
 			'bt470bg': 1,
 			'smpte170m': 3
-		}[this.colorSpace.matrix];
+		}[this.#colorSpace.matrix];
 		writeBits(chunk.data, i+0, i+3, colorSpaceID);
 	}
 
-	public addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number) {
+	addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number) {
 		let data = new Uint8Array(chunk.byteLength);
 		chunk.copyTo(data);
 
 		this.addAudioChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
 	}
 	
-	public addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata) {
-		this.ensureNotFinalized();
-		if (!this.options.audio) throw new Error("No audio track declared.");
+	addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata) {
+		this.#ensureNotFinalized();
+		if (!this.#options.audio) throw new Error("No audio track declared.");
 
-		let internalChunk = this.createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
+		let internalChunk = this.#createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
 
 		// Algorithm explained in `addVideoChunk`
-		this.lastAudioTimestamp = internalChunk.timestamp;
+		this.#lastAudioTimestamp = internalChunk.timestamp;
 
-		while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= internalChunk.timestamp) {
-			let videoChunk = this.videoChunkQueue.shift();
-			this.writeSimpleBlock(videoChunk);
+		while (this.#videoChunkQueue.length > 0 && this.#videoChunkQueue[0].timestamp <= internalChunk.timestamp) {
+			let videoChunk = this.#videoChunkQueue.shift();
+			this.#writeSimpleBlock(videoChunk);
 		}
 
-		if (!this.options.video || internalChunk.timestamp <= this.lastVideoTimestamp) {
-			this.writeSimpleBlock(internalChunk);
+		if (!this.#options.video || internalChunk.timestamp <= this.#lastVideoTimestamp) {
+			this.#writeSimpleBlock(internalChunk);
 		} else {
-			this.audioChunkQueue.push(internalChunk);
+			this.#audioChunkQueue.push(internalChunk);
 		}
 
 		// Write possible audio decoder metadata to the file
 		if (meta?.decoderConfig) {
-			this.writeCodecPrivate(this.audioCodecPrivate, meta.decoderConfig.description);
+			this.#writeCodecPrivate(this.#audioCodecPrivate, meta.decoderConfig.description);
 		}
 	}
 
 	/** Converts a read-only external chunk into an internal one for easier use. */
-	private createInternalChunk(data: Uint8Array, type: 'key' | 'delta', timestamp: number, trackNumber: number) {
+	#createInternalChunk(data: Uint8Array, type: 'key' | 'delta', timestamp: number, trackNumber: number) {
 		let internalChunk: InternalMediaChunk = {
 			data,
 			type,
@@ -382,9 +382,9 @@ class WebMMuxer {
 	}
 
 	/** Writes an EBML SimpleBlock containing video or audio data to the file. */
-	private writeSimpleBlock(chunk: InternalMediaChunk) {
+	#writeSimpleBlock(chunk: InternalMediaChunk) {
 		let msTime = Math.floor(chunk.timestamp / 1000);
-		let clusterIsTooLong = chunk.type !== 'key' && msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS;
+		let clusterIsTooLong = chunk.type !== 'key' && msTime - this.#currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS;
 
 		if (clusterIsTooLong) {
 			throw new Error(
@@ -395,68 +395,68 @@ class WebMMuxer {
 		}
 
 		let shouldCreateNewClusterFromKeyFrame =
-			(chunk.trackNumber === VIDEO_TRACK_NUMBER || !this.options.video) &&
+			(chunk.trackNumber === VIDEO_TRACK_NUMBER || !this.#options.video) &&
 			chunk.type === 'key' &&
-			msTime - this.currentClusterTimestamp >= 1000;
+			msTime - this.#currentClusterTimestamp >= 1000;
 
 		if (
-			!this.currentCluster ||
+			!this.#currentCluster ||
 			shouldCreateNewClusterFromKeyFrame
 		) {
-			this.createNewCluster(msTime);
+			this.#createNewCluster(msTime);
 		}
 
 		let prelude = new Uint8Array(4);
 		let view = new DataView(prelude.buffer);
 		// 0x80 to indicate it's the last byte of a multi-byte number
 		view.setUint8(0, 0x80 | chunk.trackNumber);
-		view.setUint16(1, msTime - this.currentClusterTimestamp, false);
+		view.setUint16(1, msTime - this.#currentClusterTimestamp, false);
 		view.setUint8(3, Number(chunk.type === 'key') << 7); // Flags
 
 		let simpleBlock = { id: EBMLId.SimpleBlock, data: [
 			prelude,
 			chunk.data
 		] };
-		this.target.writeEBML(simpleBlock);
+		this.#target.writeEBML(simpleBlock);
 
-		this.duration = Math.max(this.duration, msTime);
+		this.#duration = Math.max(this.#duration, msTime);
 	}
 
 	/** 
 	 * Replaces a placeholder EBML element with actual CodecPrivate data, then pads it with a Void Element of
 	 * necessary size.
 	 */
-	private writeCodecPrivate(element: EBML, data: AllowSharedBufferSource) {
-		let endPos = this.target.pos;
-		this.target.seek(this.target.offsets.get(element));
+	#writeCodecPrivate(element: EBML, data: AllowSharedBufferSource) {
+		let endPos = this.#target.pos;
+		this.#target.seek(this.#target.offsets.get(element));
 
 		element = [
 			{ id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) },
 			{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
 		];
 		
-		this.target.writeEBML(element);
-		this.target.seek(endPos);
+		this.#target.writeEBML(element);
+		this.#target.seek(endPos);
 	}
 
 	/** Creates a new Cluster element to contain video and audio chunks. */
-	private createNewCluster(timestamp: number) {
-		if (this.currentCluster) {
-			this.finalizeCurrentCluster();
+	#createNewCluster(timestamp: number) {
+		if (this.#currentCluster) {
+			this.#finalizeCurrentCluster();
 		}
 
-		this.currentCluster = { id: EBMLId.Cluster, size: CLUSTER_SIZE_BYTES, data: [
+		this.#currentCluster = { id: EBMLId.Cluster, size: CLUSTER_SIZE_BYTES, data: [
 			{ id: EBMLId.Timestamp, data: timestamp }
 		] };
-		this.target.writeEBML(this.currentCluster);
+		this.#target.writeEBML(this.#currentCluster);
 
-		this.currentClusterTimestamp = timestamp;
+		this.#currentClusterTimestamp = timestamp;
 
 		let clusterOffsetFromSegment =
-			this.target.offsets.get(this.currentCluster) - this.segmentDataOffset;
+			this.#target.offsets.get(this.#currentCluster) - this.#segmentDataOffset;
 
 		// Add a CuePoint to the Cues element for better seeking
-		(this.cues.data as EBML[]).push({ id: EBMLId.CuePoint, data: [
+		(this.#cues.data as EBML[]).push({ id: EBMLId.CuePoint, data: [
 			{ id: EBMLId.CueTime, data: timestamp },
 			{ id: EBMLId.CueTrackPositions, data: [
 				{ id: EBMLId.CueTrack, data: VIDEO_TRACK_NUMBER },
@@ -465,62 +465,62 @@ class WebMMuxer {
 		] });
 	}
 
-	private finalizeCurrentCluster() {
-		let clusterSize = this.target.pos - this.target.dataOffsets.get(this.currentCluster);
-		let endPos = this.target.pos;
+	#finalizeCurrentCluster() {
+		let clusterSize = this.#target.pos - this.#target.dataOffsets.get(this.#currentCluster);
+		let endPos = this.#target.pos;
 
 		// Write the size now that we know it
-		this.target.seek(this.target.offsets.get(this.currentCluster) + 4);
-		this.target.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
-		this.target.seek(endPos);
+		this.#target.seek(this.#target.offsets.get(this.#currentCluster) + 4);
+		this.#target.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
+		this.#target.seek(endPos);
 	}
 
 	/** Finalizes the file, making it ready for use. Must be called after all video and audio chunks have been added. */
-	public finalize() {
+	finalize() {
 		// Flush any remaining queued chunks to the file
-		while (this.videoChunkQueue.length > 0) this.writeSimpleBlock(this.videoChunkQueue.shift());
-		while (this.audioChunkQueue.length > 0) this.writeSimpleBlock(this.audioChunkQueue.shift());
+		while (this.#videoChunkQueue.length > 0) this.#writeSimpleBlock(this.#videoChunkQueue.shift());
+		while (this.#audioChunkQueue.length > 0) this.#writeSimpleBlock(this.#audioChunkQueue.shift());
 
-		this.finalizeCurrentCluster();
-		this.target.writeEBML(this.cues);
+		this.#finalizeCurrentCluster();
+		this.#target.writeEBML(this.#cues);
 
-		let endPos = this.target.pos;
+		let endPos = this.#target.pos;
 
 		// Write the Segment size
-		let segmentSize = this.target.pos - this.segmentDataOffset;
-		this.target.seek(this.target.offsets.get(this.segment) + 4);
-		this.target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
+		let segmentSize = this.#target.pos - this.#segmentDataOffset;
+		this.#target.seek(this.#target.offsets.get(this.#segment) + 4);
+		this.#target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
 
 		// Write the duration of the media to the Segment
-		this.segmentDuration.data = new EBMLFloat64(this.duration);
-		this.target.seek(this.target.offsets.get(this.segmentDuration));
-		this.target.writeEBML(this.segmentDuration);
+		this.#segmentDuration.data = new EBMLFloat64(this.#duration);
+		this.#target.seek(this.#target.offsets.get(this.#segmentDuration));
+		this.#target.writeEBML(this.#segmentDuration);
 
 		// Fill in SeekHead position data and write it again
-		this.seekHead.data[0].data[1].data =
-			this.target.offsets.get(this.cues) - this.segmentDataOffset;
-		this.seekHead.data[1].data[1].data =
-			this.target.offsets.get(this.segmentInfo) - this.segmentDataOffset;
-		this.seekHead.data[2].data[1].data =
-			this.target.offsets.get(this.tracksElement) - this.segmentDataOffset;
+		this.#seekHead.data[0].data[1].data =
+			this.#target.offsets.get(this.#cues) - this.#segmentDataOffset;
+		this.#seekHead.data[1].data[1].data =
+			this.#target.offsets.get(this.#segmentInfo) - this.#segmentDataOffset;
+		this.#seekHead.data[2].data[1].data =
+			this.#target.offsets.get(this.#tracksElement) - this.#segmentDataOffset;
 
-		this.target.seek(this.target.offsets.get(this.seekHead));
-		this.target.writeEBML(this.seekHead);
+		this.#target.seek(this.#target.offsets.get(this.#seekHead));
+		this.#target.writeEBML(this.#seekHead);
 
-		this.target.seek(endPos);
-		this.finalized = true;
+		this.#target.seek(endPos);
+		this.#finalized = true;
 
-		if (this.target instanceof ArrayBufferWriteTarget) {
-			return this.target.finalize();
-		} else if (this.target instanceof FileSystemWritableFileStreamWriteTarget) {
-			this.target.finalize();
+		if (this.#target instanceof ArrayBufferWriteTarget) {
+			return this.#target.finalize();
+		} else if (this.#target instanceof FileSystemWritableFileStreamWriteTarget) {
+			this.#target.finalize();
 		}
 
 		return null;
 	}
 
-	private ensureNotFinalized() {
-		if (this.finalized) {
+	#ensureNotFinalized() {
+		if (this.#finalized) {
 			throw new Error("Cannot add new video or audio chunks after the file has been finalized.");
 		}
 	}

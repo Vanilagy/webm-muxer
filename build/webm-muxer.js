@@ -18,6 +18,28 @@ var WebMMuxer = (() => {
     return to;
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+  var __accessCheck = (obj, member, msg) => {
+    if (!member.has(obj))
+      throw TypeError("Cannot " + msg);
+  };
+  var __privateGet = (obj, member, getter) => {
+    __accessCheck(obj, member, "read from private field");
+    return getter ? getter.call(obj) : member.get(obj);
+  };
+  var __privateAdd = (obj, member, value) => {
+    if (member.has(obj))
+      throw TypeError("Cannot add the same private member more than once");
+    member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+  };
+  var __privateSet = (obj, member, value, setter) => {
+    __accessCheck(obj, member, "write to private field");
+    setter ? setter.call(obj, value) : member.set(obj, value);
+    return value;
+  };
+  var __privateMethod = (obj, member, method) => {
+    __accessCheck(obj, member, "access private method");
+    return method;
+  };
 
   // src/main.ts
   var main_exports = {};
@@ -330,129 +352,52 @@ var WebMMuxer = (() => {
   var APP_NAME = "https://github.com/Vanilagy/webm-muxer";
   var SEGMENT_SIZE_BYTES = 6;
   var CLUSTER_SIZE_BYTES = 5;
+  var _target, _options, _segment, _segmentInfo, _seekHead, _tracksElement, _segmentDuration, _colourElement, _videoCodecPrivate, _audioCodecPrivate, _cues, _currentCluster, _currentClusterTimestamp, _duration, _videoChunkQueue, _audioChunkQueue, _lastVideoTimestamp, _lastAudioTimestamp, _colorSpace, _finalized, _createFileHeader, createFileHeader_fn, _writeEBMLHeader, writeEBMLHeader_fn, _createSeekHead, createSeekHead_fn, _createSegmentInfo, createSegmentInfo_fn, _createTracks, createTracks_fn, _createSegment, createSegment_fn, _createCues, createCues_fn, _segmentDataOffset, segmentDataOffset_get, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn, _fixVP9ColorSpace, fixVP9ColorSpace_fn, _createInternalChunk, createInternalChunk_fn, _writeSimpleBlock, writeSimpleBlock_fn, _writeCodecPrivate, writeCodecPrivate_fn, _createNewCluster, createNewCluster_fn, _finalizeCurrentCluster, finalizeCurrentCluster_fn, _ensureNotFinalized, ensureNotFinalized_fn;
   var WebMMuxer = class {
     constructor(options) {
-      this.duration = 0;
-      this.videoChunkQueue = [];
-      this.audioChunkQueue = [];
-      this.lastVideoTimestamp = 0;
-      this.lastAudioTimestamp = 0;
-      this.finalized = false;
-      this.options = options;
+      __privateAdd(this, _createFileHeader);
+      __privateAdd(this, _writeEBMLHeader);
+      __privateAdd(this, _createSeekHead);
+      __privateAdd(this, _createSegmentInfo);
+      __privateAdd(this, _createTracks);
+      __privateAdd(this, _createSegment);
+      __privateAdd(this, _createCues);
+      __privateAdd(this, _segmentDataOffset);
+      __privateAdd(this, _writeVideoDecoderConfig);
+      __privateAdd(this, _fixVP9ColorSpace);
+      __privateAdd(this, _createInternalChunk);
+      __privateAdd(this, _writeSimpleBlock);
+      __privateAdd(this, _writeCodecPrivate);
+      __privateAdd(this, _createNewCluster);
+      __privateAdd(this, _finalizeCurrentCluster);
+      __privateAdd(this, _ensureNotFinalized);
+      __privateAdd(this, _target, void 0);
+      __privateAdd(this, _options, void 0);
+      __privateAdd(this, _segment, void 0);
+      __privateAdd(this, _segmentInfo, void 0);
+      __privateAdd(this, _seekHead, void 0);
+      __privateAdd(this, _tracksElement, void 0);
+      __privateAdd(this, _segmentDuration, void 0);
+      __privateAdd(this, _colourElement, void 0);
+      __privateAdd(this, _videoCodecPrivate, void 0);
+      __privateAdd(this, _audioCodecPrivate, void 0);
+      __privateAdd(this, _cues, void 0);
+      __privateAdd(this, _currentCluster, void 0);
+      __privateAdd(this, _currentClusterTimestamp, void 0);
+      __privateAdd(this, _duration, 0);
+      __privateAdd(this, _videoChunkQueue, []);
+      __privateAdd(this, _audioChunkQueue, []);
+      __privateAdd(this, _lastVideoTimestamp, 0);
+      __privateAdd(this, _lastAudioTimestamp, 0);
+      __privateAdd(this, _colorSpace, void 0);
+      __privateAdd(this, _finalized, false);
+      __privateSet(this, _options, options);
       if (options.target === "buffer") {
-        this.target = new ArrayBufferWriteTarget();
+        __privateSet(this, _target, new ArrayBufferWriteTarget());
       } else {
-        this.target = new FileSystemWritableFileStreamWriteTarget(options.target);
+        __privateSet(this, _target, new FileSystemWritableFileStreamWriteTarget(options.target));
       }
-      this.createFileHeader();
-    }
-    createFileHeader() {
-      this.writeEBMLHeader();
-      this.createSeekHead();
-      this.createSegmentInfo();
-      this.createTracks();
-      this.createSegment();
-      this.createCues();
-    }
-    writeEBMLHeader() {
-      let ebmlHeader = { id: 440786851 /* EBML */, data: [
-        { id: 17030 /* EBMLVersion */, data: 1 },
-        { id: 17143 /* EBMLReadVersion */, data: 1 },
-        { id: 17138 /* EBMLMaxIDLength */, data: 4 },
-        { id: 17139 /* EBMLMaxSizeLength */, data: 8 },
-        { id: 17026 /* DocType */, data: "webm" },
-        { id: 17031 /* DocTypeVersion */, data: 2 },
-        { id: 17029 /* DocTypeReadVersion */, data: 2 }
-      ] };
-      this.target.writeEBML(ebmlHeader);
-    }
-    createSeekHead() {
-      const kaxCues = new Uint8Array([28, 83, 187, 107]);
-      const kaxInfo = new Uint8Array([21, 73, 169, 102]);
-      const kaxTracks = new Uint8Array([22, 84, 174, 107]);
-      let seekHead = { id: 290298740 /* SeekHead */, data: [
-        { id: 19899 /* Seek */, data: [
-          { id: 21419 /* SeekID */, data: kaxCues },
-          { id: 21420 /* SeekPosition */, size: 5, data: 0 }
-        ] },
-        { id: 19899 /* Seek */, data: [
-          { id: 21419 /* SeekID */, data: kaxInfo },
-          { id: 21420 /* SeekPosition */, size: 5, data: 0 }
-        ] },
-        { id: 19899 /* Seek */, data: [
-          { id: 21419 /* SeekID */, data: kaxTracks },
-          { id: 21420 /* SeekPosition */, size: 5, data: 0 }
-        ] }
-      ] };
-      this.seekHead = seekHead;
-    }
-    createSegmentInfo() {
-      let segmentDuration = { id: 17545 /* Duration */, data: new EBMLFloat64(0) };
-      this.segmentDuration = segmentDuration;
-      let segmentInfo = { id: 357149030 /* Info */, data: [
-        { id: 2807729 /* TimestampScale */, data: 1e6 },
-        { id: 19840 /* MuxingApp */, data: APP_NAME },
-        { id: 22337 /* WritingApp */, data: APP_NAME },
-        segmentDuration
-      ] };
-      this.segmentInfo = segmentInfo;
-    }
-    createTracks() {
-      let tracksElement = { id: 374648427 /* Tracks */, data: [] };
-      this.tracksElement = tracksElement;
-      if (this.options.video) {
-        this.videoCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
-        let colourElement = { id: 21936 /* Colour */, data: [
-          { id: 21937 /* MatrixCoefficients */, data: 2 },
-          { id: 21946 /* TransferCharacteristics */, data: 2 },
-          { id: 21947 /* Primaries */, data: 2 },
-          { id: 21945 /* Range */, data: 0 }
-        ] };
-        this.colourElement = colourElement;
-        tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
-          { id: 215 /* TrackNumber */, data: VIDEO_TRACK_NUMBER },
-          { id: 29637 /* TrackUID */, data: VIDEO_TRACK_NUMBER },
-          { id: 131 /* TrackType */, data: VIDEO_TRACK_TYPE },
-          { id: 134 /* CodecID */, data: this.options.video.codec },
-          this.videoCodecPrivate,
-          this.options.video.frameRate ? { id: 2352003 /* DefaultDuration */, data: 1e9 / this.options.video.frameRate } : null,
-          { id: 224 /* Video */, data: [
-            { id: 176 /* PixelWidth */, data: this.options.video.width },
-            { id: 186 /* PixelHeight */, data: this.options.video.height },
-            colourElement
-          ] }
-        ].filter(Boolean) });
-      }
-      if (this.options.audio) {
-        this.audioCodecPrivate = { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
-        tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
-          { id: 215 /* TrackNumber */, data: AUDIO_TRACK_NUMBER },
-          { id: 29637 /* TrackUID */, data: AUDIO_TRACK_NUMBER },
-          { id: 131 /* TrackType */, data: AUDIO_TRACK_TYPE },
-          { id: 134 /* CodecID */, data: this.options.audio.codec },
-          this.audioCodecPrivate,
-          { id: 225 /* Audio */, data: [
-            { id: 181 /* SamplingFrequency */, data: new EBMLFloat32(this.options.audio.sampleRate) },
-            { id: 159 /* Channels */, data: this.options.audio.numberOfChannels },
-            this.options.audio.bitDepth ? { id: 25188 /* BitDepth */, data: this.options.audio.bitDepth } : null
-          ].filter(Boolean) }
-        ] });
-      }
-    }
-    createSegment() {
-      let segment = { id: 408125543 /* Segment */, size: SEGMENT_SIZE_BYTES, data: [
-        this.seekHead,
-        this.segmentInfo,
-        this.tracksElement
-      ] };
-      this.segment = segment;
-      this.target.writeEBML(segment);
-    }
-    createCues() {
-      this.cues = { id: 475249515 /* Cues */, data: [] };
-    }
-    get segmentDataOffset() {
-      return this.target.dataOffsets.get(this.segment);
+      __privateMethod(this, _createFileHeader, createFileHeader_fn).call(this);
     }
     addVideoChunk(chunk, meta, timestamp) {
       let data = new Uint8Array(chunk.byteLength);
@@ -460,94 +405,24 @@ var WebMMuxer = (() => {
       this.addVideoChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
     }
     addVideoChunkRaw(data, type, timestamp, meta) {
-      this.ensureNotFinalized();
-      if (!this.options.video)
+      __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
+      if (!__privateGet(this, _options).video)
         throw new Error("No video track declared.");
       if (meta)
-        this.writeVideoDecoderConfig(meta);
-      let internalChunk = this.createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
-      if (this.options.video.codec === "V_VP9")
-        this.fixVP9ColorSpace(internalChunk);
-      this.lastVideoTimestamp = internalChunk.timestamp;
-      while (this.audioChunkQueue.length > 0 && this.audioChunkQueue[0].timestamp <= internalChunk.timestamp) {
-        let audioChunk = this.audioChunkQueue.shift();
-        this.writeSimpleBlock(audioChunk);
+        __privateMethod(this, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn).call(this, meta);
+      let internalChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, data, type, timestamp, VIDEO_TRACK_NUMBER);
+      if (__privateGet(this, _options).video.codec === "V_VP9")
+        __privateMethod(this, _fixVP9ColorSpace, fixVP9ColorSpace_fn).call(this, internalChunk);
+      __privateSet(this, _lastVideoTimestamp, internalChunk.timestamp);
+      while (__privateGet(this, _audioChunkQueue).length > 0 && __privateGet(this, _audioChunkQueue)[0].timestamp <= internalChunk.timestamp) {
+        let audioChunk = __privateGet(this, _audioChunkQueue).shift();
+        __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, audioChunk);
       }
-      if (!this.options.audio || internalChunk.timestamp <= this.lastAudioTimestamp) {
-        this.writeSimpleBlock(internalChunk);
+      if (!__privateGet(this, _options).audio || internalChunk.timestamp <= __privateGet(this, _lastAudioTimestamp)) {
+        __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, internalChunk);
       } else {
-        this.videoChunkQueue.push(internalChunk);
+        __privateGet(this, _videoChunkQueue).push(internalChunk);
       }
-    }
-    writeVideoDecoderConfig(meta) {
-      if (meta.decoderConfig) {
-        if (meta.decoderConfig.colorSpace) {
-          let colorSpace = meta.decoderConfig.colorSpace;
-          this.colorSpace = colorSpace;
-          this.colourElement.data = [
-            { id: 21937 /* MatrixCoefficients */, data: {
-              "rgb": 1,
-              "bt709": 1,
-              "bt470bg": 5,
-              "smpte170m": 6
-            }[colorSpace.matrix] },
-            { id: 21946 /* TransferCharacteristics */, data: {
-              "bt709": 1,
-              "smpte170m": 6,
-              "iec61966-2-1": 13
-            }[colorSpace.transfer] },
-            { id: 21947 /* Primaries */, data: {
-              "bt709": 1,
-              "bt470bg": 5,
-              "smpte170m": 6
-            }[colorSpace.primaries] },
-            { id: 21945 /* Range */, data: [1, 2][Number(colorSpace.fullRange)] }
-          ];
-          let endPos = this.target.pos;
-          this.target.seek(this.target.offsets.get(this.colourElement));
-          this.target.writeEBML(this.colourElement);
-          this.target.seek(endPos);
-        }
-        if (meta.decoderConfig.description) {
-          this.writeCodecPrivate(this.videoCodecPrivate, meta.decoderConfig.description);
-        }
-      }
-    }
-    fixVP9ColorSpace(chunk) {
-      if (chunk.type !== "key")
-        return;
-      if (!this.colorSpace)
-        return;
-      let i = 0;
-      if (readBits(chunk.data, 0, 2) !== 2)
-        return;
-      i += 2;
-      let profile = (readBits(chunk.data, i + 1, i + 2) << 1) + readBits(chunk.data, i + 0, i + 1);
-      i += 2;
-      if (profile === 3)
-        i++;
-      let showExistingFrame = readBits(chunk.data, i + 0, i + 1);
-      i++;
-      if (showExistingFrame)
-        return;
-      let frameType = readBits(chunk.data, i + 0, i + 1);
-      i++;
-      if (frameType !== 0)
-        return;
-      i += 2;
-      let syncCode = readBits(chunk.data, i + 0, i + 24);
-      i += 24;
-      if (syncCode !== 4817730)
-        return;
-      if (profile >= 2)
-        i++;
-      let colorSpaceID = {
-        "rgb": 7,
-        "bt709": 2,
-        "bt470bg": 1,
-        "smpte170m": 3
-      }[this.colorSpace.matrix];
-      writeBits(chunk.data, i + 0, i + 3, colorSpaceID);
     }
     addAudioChunk(chunk, meta, timestamp) {
       let data = new Uint8Array(chunk.byteLength);
@@ -555,124 +430,338 @@ var WebMMuxer = (() => {
       this.addAudioChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
     }
     addAudioChunkRaw(data, type, timestamp, meta) {
-      this.ensureNotFinalized();
-      if (!this.options.audio)
+      __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
+      if (!__privateGet(this, _options).audio)
         throw new Error("No audio track declared.");
-      let internalChunk = this.createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
-      this.lastAudioTimestamp = internalChunk.timestamp;
-      while (this.videoChunkQueue.length > 0 && this.videoChunkQueue[0].timestamp <= internalChunk.timestamp) {
-        let videoChunk = this.videoChunkQueue.shift();
-        this.writeSimpleBlock(videoChunk);
+      let internalChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, data, type, timestamp, AUDIO_TRACK_NUMBER);
+      __privateSet(this, _lastAudioTimestamp, internalChunk.timestamp);
+      while (__privateGet(this, _videoChunkQueue).length > 0 && __privateGet(this, _videoChunkQueue)[0].timestamp <= internalChunk.timestamp) {
+        let videoChunk = __privateGet(this, _videoChunkQueue).shift();
+        __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, videoChunk);
       }
-      if (!this.options.video || internalChunk.timestamp <= this.lastVideoTimestamp) {
-        this.writeSimpleBlock(internalChunk);
+      if (!__privateGet(this, _options).video || internalChunk.timestamp <= __privateGet(this, _lastVideoTimestamp)) {
+        __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, internalChunk);
       } else {
-        this.audioChunkQueue.push(internalChunk);
+        __privateGet(this, _audioChunkQueue).push(internalChunk);
       }
       if (meta == null ? void 0 : meta.decoderConfig) {
-        this.writeCodecPrivate(this.audioCodecPrivate, meta.decoderConfig.description);
+        __privateMethod(this, _writeCodecPrivate, writeCodecPrivate_fn).call(this, __privateGet(this, _audioCodecPrivate), meta.decoderConfig.description);
       }
-    }
-    createInternalChunk(data, type, timestamp, trackNumber) {
-      let internalChunk = {
-        data,
-        type,
-        timestamp,
-        trackNumber
-      };
-      return internalChunk;
-    }
-    writeSimpleBlock(chunk) {
-      let msTime = Math.floor(chunk.timestamp / 1e3);
-      let clusterIsTooLong = chunk.type !== "key" && msTime - this.currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS;
-      if (clusterIsTooLong) {
-        throw new Error(
-          `Current Matroska cluster exceeded its maximum allowed length of ${MAX_CHUNK_LENGTH_MS} milliseconds. In order to produce a correct WebM file, you must pass in a video key frame at least every ${MAX_CHUNK_LENGTH_MS} milliseconds.`
-        );
-      }
-      let shouldCreateNewClusterFromKeyFrame = (chunk.trackNumber === VIDEO_TRACK_NUMBER || !this.options.video) && chunk.type === "key" && msTime - this.currentClusterTimestamp >= 1e3;
-      if (!this.currentCluster || shouldCreateNewClusterFromKeyFrame) {
-        this.createNewCluster(msTime);
-      }
-      let prelude = new Uint8Array(4);
-      let view = new DataView(prelude.buffer);
-      view.setUint8(0, 128 | chunk.trackNumber);
-      view.setUint16(1, msTime - this.currentClusterTimestamp, false);
-      view.setUint8(3, Number(chunk.type === "key") << 7);
-      let simpleBlock = { id: 163 /* SimpleBlock */, data: [
-        prelude,
-        chunk.data
-      ] };
-      this.target.writeEBML(simpleBlock);
-      this.duration = Math.max(this.duration, msTime);
-    }
-    writeCodecPrivate(element, data) {
-      let endPos = this.target.pos;
-      this.target.seek(this.target.offsets.get(element));
-      element = [
-        { id: 25506 /* CodecPrivate */, size: 4, data: new Uint8Array(data) },
-        { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
-      ];
-      this.target.writeEBML(element);
-      this.target.seek(endPos);
-    }
-    createNewCluster(timestamp) {
-      if (this.currentCluster) {
-        this.finalizeCurrentCluster();
-      }
-      this.currentCluster = { id: 524531317 /* Cluster */, size: CLUSTER_SIZE_BYTES, data: [
-        { id: 231 /* Timestamp */, data: timestamp }
-      ] };
-      this.target.writeEBML(this.currentCluster);
-      this.currentClusterTimestamp = timestamp;
-      let clusterOffsetFromSegment = this.target.offsets.get(this.currentCluster) - this.segmentDataOffset;
-      this.cues.data.push({ id: 187 /* CuePoint */, data: [
-        { id: 179 /* CueTime */, data: timestamp },
-        { id: 183 /* CueTrackPositions */, data: [
-          { id: 247 /* CueTrack */, data: VIDEO_TRACK_NUMBER },
-          { id: 241 /* CueClusterPosition */, data: clusterOffsetFromSegment }
-        ] }
-      ] });
-    }
-    finalizeCurrentCluster() {
-      let clusterSize = this.target.pos - this.target.dataOffsets.get(this.currentCluster);
-      let endPos = this.target.pos;
-      this.target.seek(this.target.offsets.get(this.currentCluster) + 4);
-      this.target.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
-      this.target.seek(endPos);
     }
     finalize() {
-      while (this.videoChunkQueue.length > 0)
-        this.writeSimpleBlock(this.videoChunkQueue.shift());
-      while (this.audioChunkQueue.length > 0)
-        this.writeSimpleBlock(this.audioChunkQueue.shift());
-      this.finalizeCurrentCluster();
-      this.target.writeEBML(this.cues);
-      let endPos = this.target.pos;
-      let segmentSize = this.target.pos - this.segmentDataOffset;
-      this.target.seek(this.target.offsets.get(this.segment) + 4);
-      this.target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
-      this.segmentDuration.data = new EBMLFloat64(this.duration);
-      this.target.seek(this.target.offsets.get(this.segmentDuration));
-      this.target.writeEBML(this.segmentDuration);
-      this.seekHead.data[0].data[1].data = this.target.offsets.get(this.cues) - this.segmentDataOffset;
-      this.seekHead.data[1].data[1].data = this.target.offsets.get(this.segmentInfo) - this.segmentDataOffset;
-      this.seekHead.data[2].data[1].data = this.target.offsets.get(this.tracksElement) - this.segmentDataOffset;
-      this.target.seek(this.target.offsets.get(this.seekHead));
-      this.target.writeEBML(this.seekHead);
-      this.target.seek(endPos);
-      this.finalized = true;
-      if (this.target instanceof ArrayBufferWriteTarget) {
-        return this.target.finalize();
-      } else if (this.target instanceof FileSystemWritableFileStreamWriteTarget) {
-        this.target.finalize();
+      while (__privateGet(this, _videoChunkQueue).length > 0)
+        __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, __privateGet(this, _videoChunkQueue).shift());
+      while (__privateGet(this, _audioChunkQueue).length > 0)
+        __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, __privateGet(this, _audioChunkQueue).shift());
+      __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
+      __privateGet(this, _target).writeEBML(__privateGet(this, _cues));
+      let endPos = __privateGet(this, _target).pos;
+      let segmentSize = __privateGet(this, _target).pos - __privateGet(this, _segmentDataOffset, segmentDataOffset_get);
+      __privateGet(this, _target).seek(__privateGet(this, _target).offsets.get(__privateGet(this, _segment)) + 4);
+      __privateGet(this, _target).writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
+      __privateGet(this, _segmentDuration).data = new EBMLFloat64(__privateGet(this, _duration));
+      __privateGet(this, _target).seek(__privateGet(this, _target).offsets.get(__privateGet(this, _segmentDuration)));
+      __privateGet(this, _target).writeEBML(__privateGet(this, _segmentDuration));
+      __privateGet(this, _seekHead).data[0].data[1].data = __privateGet(this, _target).offsets.get(__privateGet(this, _cues)) - __privateGet(this, _segmentDataOffset, segmentDataOffset_get);
+      __privateGet(this, _seekHead).data[1].data[1].data = __privateGet(this, _target).offsets.get(__privateGet(this, _segmentInfo)) - __privateGet(this, _segmentDataOffset, segmentDataOffset_get);
+      __privateGet(this, _seekHead).data[2].data[1].data = __privateGet(this, _target).offsets.get(__privateGet(this, _tracksElement)) - __privateGet(this, _segmentDataOffset, segmentDataOffset_get);
+      __privateGet(this, _target).seek(__privateGet(this, _target).offsets.get(__privateGet(this, _seekHead)));
+      __privateGet(this, _target).writeEBML(__privateGet(this, _seekHead));
+      __privateGet(this, _target).seek(endPos);
+      __privateSet(this, _finalized, true);
+      if (__privateGet(this, _target) instanceof ArrayBufferWriteTarget) {
+        return __privateGet(this, _target).finalize();
+      } else if (__privateGet(this, _target) instanceof FileSystemWritableFileStreamWriteTarget) {
+        __privateGet(this, _target).finalize();
       }
       return null;
     }
-    ensureNotFinalized() {
-      if (this.finalized) {
-        throw new Error("Cannot add new video or audio chunks after the file has been finalized.");
+  };
+  _target = new WeakMap();
+  _options = new WeakMap();
+  _segment = new WeakMap();
+  _segmentInfo = new WeakMap();
+  _seekHead = new WeakMap();
+  _tracksElement = new WeakMap();
+  _segmentDuration = new WeakMap();
+  _colourElement = new WeakMap();
+  _videoCodecPrivate = new WeakMap();
+  _audioCodecPrivate = new WeakMap();
+  _cues = new WeakMap();
+  _currentCluster = new WeakMap();
+  _currentClusterTimestamp = new WeakMap();
+  _duration = new WeakMap();
+  _videoChunkQueue = new WeakMap();
+  _audioChunkQueue = new WeakMap();
+  _lastVideoTimestamp = new WeakMap();
+  _lastAudioTimestamp = new WeakMap();
+  _colorSpace = new WeakMap();
+  _finalized = new WeakMap();
+  _createFileHeader = new WeakSet();
+  createFileHeader_fn = function() {
+    __privateMethod(this, _writeEBMLHeader, writeEBMLHeader_fn).call(this);
+    __privateMethod(this, _createSeekHead, createSeekHead_fn).call(this);
+    __privateMethod(this, _createSegmentInfo, createSegmentInfo_fn).call(this);
+    __privateMethod(this, _createTracks, createTracks_fn).call(this);
+    __privateMethod(this, _createSegment, createSegment_fn).call(this);
+    __privateMethod(this, _createCues, createCues_fn).call(this);
+  };
+  _writeEBMLHeader = new WeakSet();
+  writeEBMLHeader_fn = function() {
+    let ebmlHeader = { id: 440786851 /* EBML */, data: [
+      { id: 17030 /* EBMLVersion */, data: 1 },
+      { id: 17143 /* EBMLReadVersion */, data: 1 },
+      { id: 17138 /* EBMLMaxIDLength */, data: 4 },
+      { id: 17139 /* EBMLMaxSizeLength */, data: 8 },
+      { id: 17026 /* DocType */, data: "webm" },
+      { id: 17031 /* DocTypeVersion */, data: 2 },
+      { id: 17029 /* DocTypeReadVersion */, data: 2 }
+    ] };
+    __privateGet(this, _target).writeEBML(ebmlHeader);
+  };
+  _createSeekHead = new WeakSet();
+  createSeekHead_fn = function() {
+    const kaxCues = new Uint8Array([28, 83, 187, 107]);
+    const kaxInfo = new Uint8Array([21, 73, 169, 102]);
+    const kaxTracks = new Uint8Array([22, 84, 174, 107]);
+    let seekHead = { id: 290298740 /* SeekHead */, data: [
+      { id: 19899 /* Seek */, data: [
+        { id: 21419 /* SeekID */, data: kaxCues },
+        { id: 21420 /* SeekPosition */, size: 5, data: 0 }
+      ] },
+      { id: 19899 /* Seek */, data: [
+        { id: 21419 /* SeekID */, data: kaxInfo },
+        { id: 21420 /* SeekPosition */, size: 5, data: 0 }
+      ] },
+      { id: 19899 /* Seek */, data: [
+        { id: 21419 /* SeekID */, data: kaxTracks },
+        { id: 21420 /* SeekPosition */, size: 5, data: 0 }
+      ] }
+    ] };
+    __privateSet(this, _seekHead, seekHead);
+  };
+  _createSegmentInfo = new WeakSet();
+  createSegmentInfo_fn = function() {
+    let segmentDuration = { id: 17545 /* Duration */, data: new EBMLFloat64(0) };
+    __privateSet(this, _segmentDuration, segmentDuration);
+    let segmentInfo = { id: 357149030 /* Info */, data: [
+      { id: 2807729 /* TimestampScale */, data: 1e6 },
+      { id: 19840 /* MuxingApp */, data: APP_NAME },
+      { id: 22337 /* WritingApp */, data: APP_NAME },
+      segmentDuration
+    ] };
+    __privateSet(this, _segmentInfo, segmentInfo);
+  };
+  _createTracks = new WeakSet();
+  createTracks_fn = function() {
+    let tracksElement = { id: 374648427 /* Tracks */, data: [] };
+    __privateSet(this, _tracksElement, tracksElement);
+    if (__privateGet(this, _options).video) {
+      __privateSet(this, _videoCodecPrivate, { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) });
+      let colourElement = { id: 21936 /* Colour */, data: [
+        { id: 21937 /* MatrixCoefficients */, data: 2 },
+        { id: 21946 /* TransferCharacteristics */, data: 2 },
+        { id: 21947 /* Primaries */, data: 2 },
+        { id: 21945 /* Range */, data: 0 }
+      ] };
+      __privateSet(this, _colourElement, colourElement);
+      tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
+        { id: 215 /* TrackNumber */, data: VIDEO_TRACK_NUMBER },
+        { id: 29637 /* TrackUID */, data: VIDEO_TRACK_NUMBER },
+        { id: 131 /* TrackType */, data: VIDEO_TRACK_TYPE },
+        { id: 134 /* CodecID */, data: __privateGet(this, _options).video.codec },
+        __privateGet(this, _videoCodecPrivate),
+        __privateGet(this, _options).video.frameRate ? { id: 2352003 /* DefaultDuration */, data: 1e9 / __privateGet(this, _options).video.frameRate } : null,
+        { id: 224 /* Video */, data: [
+          { id: 176 /* PixelWidth */, data: __privateGet(this, _options).video.width },
+          { id: 186 /* PixelHeight */, data: __privateGet(this, _options).video.height },
+          colourElement
+        ] }
+      ].filter(Boolean) });
+    }
+    if (__privateGet(this, _options).audio) {
+      __privateSet(this, _audioCodecPrivate, { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) });
+      tracksElement.data.push({ id: 174 /* TrackEntry */, data: [
+        { id: 215 /* TrackNumber */, data: AUDIO_TRACK_NUMBER },
+        { id: 29637 /* TrackUID */, data: AUDIO_TRACK_NUMBER },
+        { id: 131 /* TrackType */, data: AUDIO_TRACK_TYPE },
+        { id: 134 /* CodecID */, data: __privateGet(this, _options).audio.codec },
+        __privateGet(this, _audioCodecPrivate),
+        { id: 225 /* Audio */, data: [
+          { id: 181 /* SamplingFrequency */, data: new EBMLFloat32(__privateGet(this, _options).audio.sampleRate) },
+          { id: 159 /* Channels */, data: __privateGet(this, _options).audio.numberOfChannels },
+          __privateGet(this, _options).audio.bitDepth ? { id: 25188 /* BitDepth */, data: __privateGet(this, _options).audio.bitDepth } : null
+        ].filter(Boolean) }
+      ] });
+    }
+  };
+  _createSegment = new WeakSet();
+  createSegment_fn = function() {
+    let segment = { id: 408125543 /* Segment */, size: SEGMENT_SIZE_BYTES, data: [
+      __privateGet(this, _seekHead),
+      __privateGet(this, _segmentInfo),
+      __privateGet(this, _tracksElement)
+    ] };
+    __privateSet(this, _segment, segment);
+    __privateGet(this, _target).writeEBML(segment);
+  };
+  _createCues = new WeakSet();
+  createCues_fn = function() {
+    __privateSet(this, _cues, { id: 475249515 /* Cues */, data: [] });
+  };
+  _segmentDataOffset = new WeakSet();
+  segmentDataOffset_get = function() {
+    return __privateGet(this, _target).dataOffsets.get(__privateGet(this, _segment));
+  };
+  _writeVideoDecoderConfig = new WeakSet();
+  writeVideoDecoderConfig_fn = function(meta) {
+    if (meta.decoderConfig) {
+      if (meta.decoderConfig.colorSpace) {
+        let colorSpace = meta.decoderConfig.colorSpace;
+        __privateSet(this, _colorSpace, colorSpace);
+        __privateGet(this, _colourElement).data = [
+          { id: 21937 /* MatrixCoefficients */, data: {
+            "rgb": 1,
+            "bt709": 1,
+            "bt470bg": 5,
+            "smpte170m": 6
+          }[colorSpace.matrix] },
+          { id: 21946 /* TransferCharacteristics */, data: {
+            "bt709": 1,
+            "smpte170m": 6,
+            "iec61966-2-1": 13
+          }[colorSpace.transfer] },
+          { id: 21947 /* Primaries */, data: {
+            "bt709": 1,
+            "bt470bg": 5,
+            "smpte170m": 6
+          }[colorSpace.primaries] },
+          { id: 21945 /* Range */, data: [1, 2][Number(colorSpace.fullRange)] }
+        ];
+        let endPos = __privateGet(this, _target).pos;
+        __privateGet(this, _target).seek(__privateGet(this, _target).offsets.get(__privateGet(this, _colourElement)));
+        __privateGet(this, _target).writeEBML(__privateGet(this, _colourElement));
+        __privateGet(this, _target).seek(endPos);
       }
+      if (meta.decoderConfig.description) {
+        __privateMethod(this, _writeCodecPrivate, writeCodecPrivate_fn).call(this, __privateGet(this, _videoCodecPrivate), meta.decoderConfig.description);
+      }
+    }
+  };
+  _fixVP9ColorSpace = new WeakSet();
+  fixVP9ColorSpace_fn = function(chunk) {
+    if (chunk.type !== "key")
+      return;
+    if (!__privateGet(this, _colorSpace))
+      return;
+    let i = 0;
+    if (readBits(chunk.data, 0, 2) !== 2)
+      return;
+    i += 2;
+    let profile = (readBits(chunk.data, i + 1, i + 2) << 1) + readBits(chunk.data, i + 0, i + 1);
+    i += 2;
+    if (profile === 3)
+      i++;
+    let showExistingFrame = readBits(chunk.data, i + 0, i + 1);
+    i++;
+    if (showExistingFrame)
+      return;
+    let frameType = readBits(chunk.data, i + 0, i + 1);
+    i++;
+    if (frameType !== 0)
+      return;
+    i += 2;
+    let syncCode = readBits(chunk.data, i + 0, i + 24);
+    i += 24;
+    if (syncCode !== 4817730)
+      return;
+    if (profile >= 2)
+      i++;
+    let colorSpaceID = {
+      "rgb": 7,
+      "bt709": 2,
+      "bt470bg": 1,
+      "smpte170m": 3
+    }[__privateGet(this, _colorSpace).matrix];
+    writeBits(chunk.data, i + 0, i + 3, colorSpaceID);
+  };
+  _createInternalChunk = new WeakSet();
+  createInternalChunk_fn = function(data, type, timestamp, trackNumber) {
+    let internalChunk = {
+      data,
+      type,
+      timestamp,
+      trackNumber
+    };
+    return internalChunk;
+  };
+  _writeSimpleBlock = new WeakSet();
+  writeSimpleBlock_fn = function(chunk) {
+    let msTime = Math.floor(chunk.timestamp / 1e3);
+    let clusterIsTooLong = chunk.type !== "key" && msTime - __privateGet(this, _currentClusterTimestamp) >= MAX_CHUNK_LENGTH_MS;
+    if (clusterIsTooLong) {
+      throw new Error(
+        `Current Matroska cluster exceeded its maximum allowed length of ${MAX_CHUNK_LENGTH_MS} milliseconds. In order to produce a correct WebM file, you must pass in a video key frame at least every ${MAX_CHUNK_LENGTH_MS} milliseconds.`
+      );
+    }
+    let shouldCreateNewClusterFromKeyFrame = (chunk.trackNumber === VIDEO_TRACK_NUMBER || !__privateGet(this, _options).video) && chunk.type === "key" && msTime - __privateGet(this, _currentClusterTimestamp) >= 1e3;
+    if (!__privateGet(this, _currentCluster) || shouldCreateNewClusterFromKeyFrame) {
+      __privateMethod(this, _createNewCluster, createNewCluster_fn).call(this, msTime);
+    }
+    let prelude = new Uint8Array(4);
+    let view = new DataView(prelude.buffer);
+    view.setUint8(0, 128 | chunk.trackNumber);
+    view.setUint16(1, msTime - __privateGet(this, _currentClusterTimestamp), false);
+    view.setUint8(3, Number(chunk.type === "key") << 7);
+    let simpleBlock = { id: 163 /* SimpleBlock */, data: [
+      prelude,
+      chunk.data
+    ] };
+    __privateGet(this, _target).writeEBML(simpleBlock);
+    __privateSet(this, _duration, Math.max(__privateGet(this, _duration), msTime));
+  };
+  _writeCodecPrivate = new WeakSet();
+  writeCodecPrivate_fn = function(element, data) {
+    let endPos = __privateGet(this, _target).pos;
+    __privateGet(this, _target).seek(__privateGet(this, _target).offsets.get(element));
+    element = [
+      { id: 25506 /* CodecPrivate */, size: 4, data: new Uint8Array(data) },
+      { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
+    ];
+    __privateGet(this, _target).writeEBML(element);
+    __privateGet(this, _target).seek(endPos);
+  };
+  _createNewCluster = new WeakSet();
+  createNewCluster_fn = function(timestamp) {
+    if (__privateGet(this, _currentCluster)) {
+      __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
+    }
+    __privateSet(this, _currentCluster, { id: 524531317 /* Cluster */, size: CLUSTER_SIZE_BYTES, data: [
+      { id: 231 /* Timestamp */, data: timestamp }
+    ] });
+    __privateGet(this, _target).writeEBML(__privateGet(this, _currentCluster));
+    __privateSet(this, _currentClusterTimestamp, timestamp);
+    let clusterOffsetFromSegment = __privateGet(this, _target).offsets.get(__privateGet(this, _currentCluster)) - __privateGet(this, _segmentDataOffset, segmentDataOffset_get);
+    __privateGet(this, _cues).data.push({ id: 187 /* CuePoint */, data: [
+      { id: 179 /* CueTime */, data: timestamp },
+      { id: 183 /* CueTrackPositions */, data: [
+        { id: 247 /* CueTrack */, data: VIDEO_TRACK_NUMBER },
+        { id: 241 /* CueClusterPosition */, data: clusterOffsetFromSegment }
+      ] }
+    ] });
+  };
+  _finalizeCurrentCluster = new WeakSet();
+  finalizeCurrentCluster_fn = function() {
+    let clusterSize = __privateGet(this, _target).pos - __privateGet(this, _target).dataOffsets.get(__privateGet(this, _currentCluster));
+    let endPos = __privateGet(this, _target).pos;
+    __privateGet(this, _target).seek(__privateGet(this, _target).offsets.get(__privateGet(this, _currentCluster)) + 4);
+    __privateGet(this, _target).writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
+    __privateGet(this, _target).seek(endPos);
+  };
+  _ensureNotFinalized = new WeakSet();
+  ensureNotFinalized_fn = function() {
+    if (__privateGet(this, _finalized)) {
+      throw new Error("Cannot add new video or audio chunks after the file has been finalized.");
     }
   };
   var main_default = WebMMuxer;

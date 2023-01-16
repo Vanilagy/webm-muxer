@@ -24,7 +24,7 @@ npm install webm-muxer
 The package has a single, default export, `WebMMuxer`:
 ```js
 import WebMMuxer from 'webm-muxer';
-// Or, using CJS:
+// Or, using CommonJS:
 const WebMMuxer = require('webm-muxer');
 ```
 Alternatively, you can simply include the library as a script in your HTML, which will add `WebMMuxer` to the global
