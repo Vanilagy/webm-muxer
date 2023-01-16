@@ -7,3 +7,4 @@ test
 build.js
 build/webm-muxer.min.js
 tsconfig.json
+.eslintrc.js
