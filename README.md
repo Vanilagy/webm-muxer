@@ -175,7 +175,7 @@ be stored in monotonically increasing time. This does mean, however, that the mu
 medium if the other medium has not yet encoded chunks up to that timestamp. For example, should you first encode all
 your video frames and then encode the audio afterwards, the multiplexer will have to hold all those video frames in
 memory until the audio chunks start coming in. This might lead to memory exhaustion should your video be very long.
-When there is only one media track, this issue does not arrive. So, when muxing a multimedia file, make sure it is
+When there is only one media track, this issue does not arise. So, when muxing a multimedia file, make sure it is
 somewhat limited in size or the chunks are encoded in a somewhat interleaved way (like is the case for live media).
 ### Size limits
 This library can mux WebM files up to a total size of ~4398 GB and with a Matroska Cluster size of ~34 GB.
