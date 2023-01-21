@@ -11,7 +11,7 @@ high-quality, fast and tiny, and supports both video and audio.
 
 ## Motivation
 This library was created to power the in-game video renderer of the browser game
-[Marble Blast Web](https://github.com/vanilagy/marbleblast); [here](https://www.youtube.com/watch?v=ByCcAIoXsKY) you can find a video completely rendered by it and muxed with this library. Previous efforts at in-browser WebM muxing, such as
+[Marble Blast Web](https://github.com/vanilagy/marbleblast) - [here](https://www.youtube.com/watch?v=ByCcAIoXsKY) you can find a video completely rendered by it and muxed with this library. Previous efforts at in-browser WebM muxing, such as
 [webm-writer-js](https://github.com/thenickdude/webm-writer-js) or
 [webm-muxer.js](https://github.com/davedoesdev/webm-muxer.js), were either lacking in functionality or were way too
 heavy in terms of byte size, which prompted the creation of this library.
