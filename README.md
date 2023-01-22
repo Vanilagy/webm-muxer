@@ -10,7 +10,7 @@ high-quality, fast and tiny, and supports both video and audio.
 [Demo](https://vanilagy.github.io/webm-muxer/demo/)
 
 ## Quick start
-The following is an example of a common usage for this library:
+The following is an example for a common usage of this library:
 ```js
 import WebMMuxer from 'webm-muxer';
 
