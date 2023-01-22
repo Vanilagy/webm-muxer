@@ -169,6 +169,7 @@ a video key frame. You therefore need to tell your `VideoEncoder` to encode a `V
 ```js
 videoEncoder.encode(frame, { keyFrame: true });
 ```
+
 ### Media chunk buffering
 When muxing a file with a video **and** an audio track, it is important that the individual chunks inside the WebM file
 be stored in monotonically increasing time. This does mean, however, that the multiplexer must buffer chunks of one
@@ -177,7 +178,8 @@ your video frames and then encode the audio afterwards, the multiplexer will hav
 memory until the audio chunks start coming in. This might lead to memory exhaustion should your video be very long.
 When there is only one media track, this issue does not arise. So, when muxing a multimedia file, make sure it is
 somewhat limited in size or the chunks are encoded in a somewhat interleaved way (like is the case for live media).
-### Size limits
+
+### Size "limits"
 This library can mux WebM files up to a total size of ~4398 GB and with a Matroska Cluster size of ~34 GB.
 
 ## Implementation
