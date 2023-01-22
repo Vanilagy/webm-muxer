@@ -9,6 +9,36 @@ high-quality, fast and tiny, and supports both video and audio.
 
 [Demo](https://vanilagy.github.io/webm-muxer/demo/)
 
+## Quick start
+```js
+import WebMMuxer from 'webm-muxer';
+
+let muxer = new WebMMuxer({
+    target: 'buffer',
+    video: {
+        codec: 'V_VP9',
+        width: 1280,
+        height: 720
+    }
+});
+
+let videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: e => console.error(e)
+});
+videoEncoder.configure({
+    codec: 'vp09.00.10.08',
+    width: 1280,
+    height: 720,
+    bitrate: 1e6
+});
+
+/* Encode some frames... */
+
+await videoEncoder.flush();
+let buffer = muxer.finalize(); // Buffer contains final WebM file
+```
+
 ## Motivation
 This library was created to power the in-game video renderer of the browser game
 [Marble Blast Web](https://github.com/vanilagy/marbleblast) - [here](https://www.youtube.com/watch?v=ByCcAIoXsKY) you can find a video completely rendered by it and muxed with this library. Previous efforts at in-browser WebM muxing, such as
