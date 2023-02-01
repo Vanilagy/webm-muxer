@@ -75,3 +75,42 @@ export enum EBMLId {
 	Primaries = 0x55bb,
 	Range = 0x55b9
 }
+
+export const measureUnsignedInt = (value: number) => {
+	// Force to 32-bit unsigned integer
+	if (value < (1 << 8)) {
+		return 1;
+	} else if (value < (1 << 16)) {
+		return 2;
+	} else if (value < (1 << 24)) {
+		return 3;
+	} else if (value < 2**32) {
+		return 4;
+	} else if (value < 2**40) {
+		return 5;
+	} else {
+		return 6;
+	}
+};
+
+export const measureEBMLVarInt = (value: number) => {
+	if (value < (1 << 7) - 1) {
+		/** Top bit is set, leaving 7 bits to hold the integer, but we can't store
+		 * 127 because "all bits set to one" is a reserved value. Same thing for the
+		 * other cases below:
+		 */
+		return 1;
+	} else if (value < (1 << 14) - 1) {
+		return 2;
+	} else if (value < (1 << 21) - 1) {
+		return 3;
+	} else if (value < (1 << 28) - 1) {
+		return 4;
+	} else if (value < 2**35-1) {
+		return 5;
+	} else if (value < 2**42-1) {
+		return 6;
+	} else {
+		throw new Error('EBML VINT size not supported ' + value);
+	}
+};

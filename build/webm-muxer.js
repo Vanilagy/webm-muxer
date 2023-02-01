@@ -58,132 +58,6 @@ var WebMMuxer = (() => {
       this.value = value;
     }
   };
-
-  // src/write_target.ts
-  var WriteTarget = class {
-    constructor() {
-      this.pos = 0;
-      this.helper = new Uint8Array(8);
-      this.helperView = new DataView(this.helper.buffer);
-      this.offsets = /* @__PURE__ */ new WeakMap();
-      this.dataOffsets = /* @__PURE__ */ new WeakMap();
-    }
-    writeFloat32(value) {
-      this.helperView.setFloat32(0, value, false);
-      this.write(this.helper.subarray(0, 4));
-    }
-    writeFloat64(value) {
-      this.helperView.setFloat64(0, value, false);
-      this.write(this.helper);
-    }
-    writeUnsignedInt(value, width = measureUnsignedInt(value)) {
-      let pos = 0;
-      switch (width) {
-        case 6:
-          this.helperView.setUint8(pos++, value / __pow(2, 40) | 0);
-        case 5:
-          this.helperView.setUint8(pos++, value / __pow(2, 32) | 0);
-        case 4:
-          this.helperView.setUint8(pos++, value >> 24);
-        case 3:
-          this.helperView.setUint8(pos++, value >> 16);
-        case 2:
-          this.helperView.setUint8(pos++, value >> 8);
-        case 1:
-          this.helperView.setUint8(pos++, value);
-          break;
-        default:
-          throw new Error("Bad UINT size " + width);
-      }
-      this.write(this.helper.subarray(0, pos));
-    }
-    writeEBMLVarInt(value, width = measureEBMLVarInt(value)) {
-      let pos = 0;
-      switch (width) {
-        case 1:
-          this.helperView.setUint8(pos++, 1 << 7 | value);
-          break;
-        case 2:
-          this.helperView.setUint8(pos++, 1 << 6 | value >> 8);
-          this.helperView.setUint8(pos++, value);
-          break;
-        case 3:
-          this.helperView.setUint8(pos++, 1 << 5 | value >> 16);
-          this.helperView.setUint8(pos++, value >> 8);
-          this.helperView.setUint8(pos++, value);
-          break;
-        case 4:
-          this.helperView.setUint8(pos++, 1 << 4 | value >> 24);
-          this.helperView.setUint8(pos++, value >> 16);
-          this.helperView.setUint8(pos++, value >> 8);
-          this.helperView.setUint8(pos++, value);
-          break;
-        case 5:
-          this.helperView.setUint8(pos++, 1 << 3 | value / __pow(2, 32) & 7);
-          this.helperView.setUint8(pos++, value >> 24);
-          this.helperView.setUint8(pos++, value >> 16);
-          this.helperView.setUint8(pos++, value >> 8);
-          this.helperView.setUint8(pos++, value);
-          break;
-        case 6:
-          this.helperView.setUint8(pos++, 1 << 2 | value / __pow(2, 40) & 3);
-          this.helperView.setUint8(pos++, value / __pow(2, 32) | 0);
-          this.helperView.setUint8(pos++, value >> 24);
-          this.helperView.setUint8(pos++, value >> 16);
-          this.helperView.setUint8(pos++, value >> 8);
-          this.helperView.setUint8(pos++, value);
-          break;
-        default:
-          throw new Error("Bad EBML VINT size " + width);
-      }
-      this.write(this.helper.subarray(0, pos));
-    }
-    writeString(str) {
-      this.write(new Uint8Array(str.split("").map((x) => x.charCodeAt(0))));
-    }
-    writeEBML(data) {
-      var _a, _b;
-      if (data instanceof Uint8Array) {
-        this.write(data);
-      } else if (Array.isArray(data)) {
-        for (let elem of data) {
-          this.writeEBML(elem);
-        }
-      } else {
-        this.offsets.set(data, this.pos);
-        this.writeUnsignedInt(data.id);
-        if (Array.isArray(data.data)) {
-          let sizePos = this.pos;
-          let sizeSize = (_a = data.size) != null ? _a : 4;
-          this.seek(this.pos + sizeSize);
-          let startPos = this.pos;
-          this.dataOffsets.set(data, startPos);
-          this.writeEBML(data.data);
-          let size = this.pos - startPos;
-          let endPos = this.pos;
-          this.seek(sizePos);
-          this.writeEBMLVarInt(size, sizeSize);
-          this.seek(endPos);
-        } else if (typeof data.data === "number") {
-          let size = (_b = data.size) != null ? _b : measureUnsignedInt(data.data);
-          this.writeEBMLVarInt(size);
-          this.writeUnsignedInt(data.data, size);
-        } else if (typeof data.data === "string") {
-          this.writeEBMLVarInt(data.data.length);
-          this.writeString(data.data);
-        } else if (data.data instanceof Uint8Array) {
-          this.writeEBMLVarInt(data.data.byteLength, data.size);
-          this.write(data.data);
-        } else if (data.data instanceof EBMLFloat32) {
-          this.writeEBMLVarInt(4);
-          this.writeFloat32(data.data.value);
-        } else if (data.data instanceof EBMLFloat64) {
-          this.writeEBMLVarInt(8);
-          this.writeFloat64(data.data.value);
-        }
-      }
-    }
-  };
   var measureUnsignedInt = (value) => {
     if (value < 1 << 8) {
       return 1;
@@ -216,27 +90,165 @@ var WebMMuxer = (() => {
       throw new Error("EBML VINT size not supported " + value);
     }
   };
+
+  // src/write_target.ts
+  var _helper, _helperView, _writeFloat32, writeFloat32_fn, _writeFloat64, writeFloat64_fn, _writeUnsignedInt, writeUnsignedInt_fn, _writeString, writeString_fn;
+  var WriteTarget = class {
+    constructor() {
+      __privateAdd(this, _writeFloat32);
+      __privateAdd(this, _writeFloat64);
+      __privateAdd(this, _writeUnsignedInt);
+      __privateAdd(this, _writeString);
+      this.pos = 0;
+      __privateAdd(this, _helper, new Uint8Array(8));
+      __privateAdd(this, _helperView, new DataView(__privateGet(this, _helper).buffer));
+      this.offsets = /* @__PURE__ */ new WeakMap();
+      this.dataOffsets = /* @__PURE__ */ new WeakMap();
+    }
+    writeEBMLVarInt(value, width = measureEBMLVarInt(value)) {
+      let pos = 0;
+      switch (width) {
+        case 1:
+          __privateGet(this, _helperView).setUint8(pos++, 1 << 7 | value);
+          break;
+        case 2:
+          __privateGet(this, _helperView).setUint8(pos++, 1 << 6 | value >> 8);
+          __privateGet(this, _helperView).setUint8(pos++, value);
+          break;
+        case 3:
+          __privateGet(this, _helperView).setUint8(pos++, 1 << 5 | value >> 16);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 8);
+          __privateGet(this, _helperView).setUint8(pos++, value);
+          break;
+        case 4:
+          __privateGet(this, _helperView).setUint8(pos++, 1 << 4 | value >> 24);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 16);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 8);
+          __privateGet(this, _helperView).setUint8(pos++, value);
+          break;
+        case 5:
+          __privateGet(this, _helperView).setUint8(pos++, 1 << 3 | value / __pow(2, 32) & 7);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 24);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 16);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 8);
+          __privateGet(this, _helperView).setUint8(pos++, value);
+          break;
+        case 6:
+          __privateGet(this, _helperView).setUint8(pos++, 1 << 2 | value / __pow(2, 40) & 3);
+          __privateGet(this, _helperView).setUint8(pos++, value / __pow(2, 32) | 0);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 24);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 16);
+          __privateGet(this, _helperView).setUint8(pos++, value >> 8);
+          __privateGet(this, _helperView).setUint8(pos++, value);
+          break;
+        default:
+          throw new Error("Bad EBML VINT size " + width);
+      }
+      this.write(__privateGet(this, _helper).subarray(0, pos));
+    }
+    writeEBML(data) {
+      var _a, _b;
+      if (data instanceof Uint8Array) {
+        this.write(data);
+      } else if (Array.isArray(data)) {
+        for (let elem of data) {
+          this.writeEBML(elem);
+        }
+      } else {
+        this.offsets.set(data, this.pos);
+        __privateMethod(this, _writeUnsignedInt, writeUnsignedInt_fn).call(this, data.id);
+        if (Array.isArray(data.data)) {
+          let sizePos = this.pos;
+          let sizeSize = (_a = data.size) != null ? _a : 4;
+          this.seek(this.pos + sizeSize);
+          let startPos = this.pos;
+          this.dataOffsets.set(data, startPos);
+          this.writeEBML(data.data);
+          let size = this.pos - startPos;
+          let endPos = this.pos;
+          this.seek(sizePos);
+          this.writeEBMLVarInt(size, sizeSize);
+          this.seek(endPos);
+        } else if (typeof data.data === "number") {
+          let size = (_b = data.size) != null ? _b : measureUnsignedInt(data.data);
+          this.writeEBMLVarInt(size);
+          __privateMethod(this, _writeUnsignedInt, writeUnsignedInt_fn).call(this, data.data, size);
+        } else if (typeof data.data === "string") {
+          this.writeEBMLVarInt(data.data.length);
+          __privateMethod(this, _writeString, writeString_fn).call(this, data.data);
+        } else if (data.data instanceof Uint8Array) {
+          this.writeEBMLVarInt(data.data.byteLength, data.size);
+          this.write(data.data);
+        } else if (data.data instanceof EBMLFloat32) {
+          this.writeEBMLVarInt(4);
+          __privateMethod(this, _writeFloat32, writeFloat32_fn).call(this, data.data.value);
+        } else if (data.data instanceof EBMLFloat64) {
+          this.writeEBMLVarInt(8);
+          __privateMethod(this, _writeFloat64, writeFloat64_fn).call(this, data.data.value);
+        }
+      }
+    }
+  };
+  _helper = new WeakMap();
+  _helperView = new WeakMap();
+  _writeFloat32 = new WeakSet();
+  writeFloat32_fn = function(value) {
+    __privateGet(this, _helperView).setFloat32(0, value, false);
+    this.write(__privateGet(this, _helper).subarray(0, 4));
+  };
+  _writeFloat64 = new WeakSet();
+  writeFloat64_fn = function(value) {
+    __privateGet(this, _helperView).setFloat64(0, value, false);
+    this.write(__privateGet(this, _helper));
+  };
+  _writeUnsignedInt = new WeakSet();
+  writeUnsignedInt_fn = function(value, width = measureUnsignedInt(value)) {
+    let pos = 0;
+    switch (width) {
+      case 6:
+        __privateGet(this, _helperView).setUint8(pos++, value / __pow(2, 40) | 0);
+      case 5:
+        __privateGet(this, _helperView).setUint8(pos++, value / __pow(2, 32) | 0);
+      case 4:
+        __privateGet(this, _helperView).setUint8(pos++, value >> 24);
+      case 3:
+        __privateGet(this, _helperView).setUint8(pos++, value >> 16);
+      case 2:
+        __privateGet(this, _helperView).setUint8(pos++, value >> 8);
+      case 1:
+        __privateGet(this, _helperView).setUint8(pos++, value);
+        break;
+      default:
+        throw new Error("Bad UINT size " + width);
+    }
+    this.write(__privateGet(this, _helper).subarray(0, pos));
+  };
+  _writeString = new WeakSet();
+  writeString_fn = function(str) {
+    this.write(new Uint8Array(str.split("").map((x) => x.charCodeAt(0))));
+  };
+  var _buffer, _bytes;
   var ArrayBufferWriteTarget = class extends WriteTarget {
     constructor() {
       super();
-      this.buffer = new ArrayBuffer(__pow(2, 16));
-      this.bytes = new Uint8Array(this.buffer);
+      __privateAdd(this, _buffer, new ArrayBuffer(__pow(2, 16)));
+      __privateAdd(this, _bytes, new Uint8Array(__privateGet(this, _buffer)));
     }
     ensureSize(size) {
-      let newLength = this.buffer.byteLength;
+      let newLength = __privateGet(this, _buffer).byteLength;
       while (newLength < size)
         newLength *= 2;
-      if (newLength === this.buffer.byteLength)
+      if (newLength === __privateGet(this, _buffer).byteLength)
         return;
       let newBuffer = new ArrayBuffer(newLength);
       let newBytes = new Uint8Array(newBuffer);
-      newBytes.set(this.bytes, 0);
-      this.buffer = newBuffer;
-      this.bytes = newBytes;
+      newBytes.set(__privateGet(this, _bytes), 0);
+      __privateSet(this, _buffer, newBuffer);
+      __privateSet(this, _bytes, newBytes);
     }
     write(data) {
       this.ensureSize(this.pos + data.byteLength);
-      this.bytes.set(data, this.pos);
+      __privateGet(this, _bytes).set(data, this.pos);
       this.pos += data.byteLength;
     }
     seek(newPos) {
@@ -244,16 +256,20 @@ var WebMMuxer = (() => {
     }
     finalize() {
       this.ensureSize(this.pos);
-      return this.buffer.slice(0, this.pos);
+      return __privateGet(this, _buffer).slice(0, this.pos);
     }
   };
+  _buffer = new WeakMap();
+  _bytes = new WeakMap();
   var FILE_CHUNK_SIZE = __pow(2, 24);
   var MAX_CHUNKS_AT_ONCE = 2;
+  var _stream, _chunks;
   var FileSystemWritableFileStreamWriteTarget = class extends WriteTarget {
     constructor(stream) {
       super();
-      this.chunks = [];
-      this.stream = stream;
+      __privateAdd(this, _stream, void 0);
+      __privateAdd(this, _chunks, []);
+      __privateSet(this, _stream, stream);
     }
     write(data) {
       this.writeDataIntoChunks(data, this.pos);
@@ -261,10 +277,10 @@ var WebMMuxer = (() => {
       this.pos += data.byteLength;
     }
     writeDataIntoChunks(data, position) {
-      let chunkIndex = this.chunks.findIndex((x) => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
+      let chunkIndex = __privateGet(this, _chunks).findIndex((x) => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
       if (chunkIndex === -1)
         chunkIndex = this.createChunk(position);
-      let chunk = this.chunks[chunkIndex];
+      let chunk = __privateGet(this, _chunks)[chunkIndex];
       let relativePosition = position - chunk.start;
       let toWrite = data.subarray(0, Math.min(FILE_CHUNK_SIZE - relativePosition, data.byteLength));
       chunk.data.set(toWrite, relativePosition);
@@ -276,9 +292,9 @@ var WebMMuxer = (() => {
       if (chunk.written[0].start === 0 && chunk.written[0].end === FILE_CHUNK_SIZE) {
         chunk.shouldFlush = true;
       }
-      if (this.chunks.length > MAX_CHUNKS_AT_ONCE) {
-        for (let i = 0; i < this.chunks.length - 1; i++) {
-          this.chunks[i].shouldFlush = true;
+      if (__privateGet(this, _chunks).length > MAX_CHUNKS_AT_ONCE) {
+        for (let i = 0; i < __privateGet(this, _chunks).length - 1; i++) {
+          __privateGet(this, _chunks)[i].shouldFlush = true;
         }
         this.flushChunks();
       }
@@ -294,23 +310,23 @@ var WebMMuxer = (() => {
         written: [],
         shouldFlush: false
       };
-      this.chunks.push(chunk);
-      this.chunks.sort((a, b) => a.start - b.start);
-      return this.chunks.indexOf(chunk);
+      __privateGet(this, _chunks).push(chunk);
+      __privateGet(this, _chunks).sort((a, b) => a.start - b.start);
+      return __privateGet(this, _chunks).indexOf(chunk);
     }
     flushChunks(force = false) {
-      for (let i = 0; i < this.chunks.length; i++) {
-        let chunk = this.chunks[i];
+      for (let i = 0; i < __privateGet(this, _chunks).length; i++) {
+        let chunk = __privateGet(this, _chunks)[i];
         if (!chunk.shouldFlush && !force)
           continue;
         for (let section of chunk.written) {
-          this.stream.write({
+          __privateGet(this, _stream).write({
             type: "write",
             data: chunk.data.subarray(section.start, section.end),
             position: chunk.start + section.start
           });
         }
-        this.chunks.splice(i--, 1);
+        __privateGet(this, _chunks).splice(i--, 1);
       }
     }
     seek(newPos) {
@@ -320,6 +336,8 @@ var WebMMuxer = (() => {
       this.flushChunks(true);
     }
   };
+  _stream = new WeakMap();
+  _chunks = new WeakMap();
   var insertSectionIntoFileChunk = (chunk, section) => {
     let low = 0;
     let high = chunk.written.length - 1;

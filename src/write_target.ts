@@ -1,4 +1,4 @@
-import { EBML, EBMLFloat32, EBMLFloat64 } from "./ebml";
+import { EBML, EBMLFloat32, EBMLFloat64, measureEBMLVarInt, measureUnsignedInt } from "./ebml";
 
 /**
  * A WriteTarget defines a generic target to which data (bytes) can be written in a simple manner. It provides utility
@@ -6,8 +6,8 @@ import { EBML, EBMLFloat32, EBMLFloat64 } from "./ebml";
  */
 export abstract class WriteTarget {
 	pos = 0;
-	helper = new Uint8Array(8);
-	helperView = new DataView(this.helper.buffer);
+	#helper = new Uint8Array(8);
+	#helperView = new DataView(this.#helper.buffer);
 
 	/**
 	 * Stores the position from the start of the file to where EBML elements have been written. This is used to
@@ -22,40 +22,40 @@ export abstract class WriteTarget {
 	/** Sets the current position for future writes to a new one. */
 	abstract seek(newPos: number): void;
 
-	writeFloat32(value: number) {
-		this.helperView.setFloat32(0, value, false);
-		this.write(this.helper.subarray(0, 4));
+	#writeFloat32(value: number) {
+		this.#helperView.setFloat32(0, value, false);
+		this.write(this.#helper.subarray(0, 4));
 	}
 
-	writeFloat64(value: number) {
-		this.helperView.setFloat64(0, value, false);
-		this.write(this.helper);
+	#writeFloat64(value: number) {
+		this.#helperView.setFloat64(0, value, false);
+		this.write(this.#helper);
 	}
 
-	writeUnsignedInt(value: number, width: number = measureUnsignedInt(value)) {
+	#writeUnsignedInt(value: number, width: number = measureUnsignedInt(value)) {
 		let pos = 0;
 
 		// Each case falls through:
 		switch (width) {
 			case 6:
 				// Need to use division to access >32 bits of floating point var
-				this.helperView.setUint8(pos++, (value / 2**40) | 0);
+				this.#helperView.setUint8(pos++, (value / 2**40) | 0);
 			case 5:
-				this.helperView.setUint8(pos++, (value / 2**32) | 0);
+				this.#helperView.setUint8(pos++, (value / 2**32) | 0);
 			case 4:
-				this.helperView.setUint8(pos++, value >> 24);
+				this.#helperView.setUint8(pos++, value >> 24);
 			case 3:
-				this.helperView.setUint8(pos++, value >> 16);
+				this.#helperView.setUint8(pos++, value >> 16);
 			case 2:
-				this.helperView.setUint8(pos++, value >> 8);
+				this.#helperView.setUint8(pos++, value >> 8);
 			case 1:
-				this.helperView.setUint8(pos++, value);
+				this.#helperView.setUint8(pos++, value);
 				break;
 			default:
 				throw new Error('Bad UINT size ' + width);
 		}
 
-		this.write(this.helper.subarray(0, pos));
+		this.write(this.#helper.subarray(0, pos));
 	}
 
 	writeEBMLVarInt(value: number, width: number = measureEBMLVarInt(value)) {
@@ -63,22 +63,22 @@ export abstract class WriteTarget {
 
 		switch (width) {
 			case 1:
-				this.helperView.setUint8(pos++, (1 << 7) | value);
+				this.#helperView.setUint8(pos++, (1 << 7) | value);
 				break;
 			case 2:
-				this.helperView.setUint8(pos++, (1 << 6) | (value >> 8));
-				this.helperView.setUint8(pos++, value);
+				this.#helperView.setUint8(pos++, (1 << 6) | (value >> 8));
+				this.#helperView.setUint8(pos++, value);
 				break;
 			case 3:
-				this.helperView.setUint8(pos++, (1 << 5) | (value >> 16));
-				this.helperView.setUint8(pos++, value >> 8);
-				this.helperView.setUint8(pos++, value);
+				this.#helperView.setUint8(pos++, (1 << 5) | (value >> 16));
+				this.#helperView.setUint8(pos++, value >> 8);
+				this.#helperView.setUint8(pos++, value);
 				break;
 			case 4:
-				this.helperView.setUint8(pos++, (1 << 4) | (value >> 24));
-				this.helperView.setUint8(pos++, value >> 16);
-				this.helperView.setUint8(pos++, value >> 8);
-				this.helperView.setUint8(pos++, value);
+				this.#helperView.setUint8(pos++, (1 << 4) | (value >> 24));
+				this.#helperView.setUint8(pos++, value >> 16);
+				this.#helperView.setUint8(pos++, value >> 8);
+				this.#helperView.setUint8(pos++, value);
 				break;
 			case 5:
 				/**
@@ -86,29 +86,29 @@ export abstract class WriteTarget {
 				 * operations, so we need to do a division by 2^32 instead of a
 				 * right-shift of 32 to retain those top 3 bits
 				 */
-				this.helperView.setUint8(pos++, (1 << 3) | ((value / 2**32) & 0x7));
-				this.helperView.setUint8(pos++, value >> 24);
-				this.helperView.setUint8(pos++, value >> 16);
-				this.helperView.setUint8(pos++, value >> 8);
-				this.helperView.setUint8(pos++, value);
+				this.#helperView.setUint8(pos++, (1 << 3) | ((value / 2**32) & 0x7));
+				this.#helperView.setUint8(pos++, value >> 24);
+				this.#helperView.setUint8(pos++, value >> 16);
+				this.#helperView.setUint8(pos++, value >> 8);
+				this.#helperView.setUint8(pos++, value);
 				break;
 			case 6:
-				this.helperView.setUint8(pos++, (1 << 2) | ((value / 2**40) & 0x3));
-				this.helperView.setUint8(pos++, (value / 2**32) | 0);
-				this.helperView.setUint8(pos++, value >> 24);
-				this.helperView.setUint8(pos++, value >> 16);
-				this.helperView.setUint8(pos++, value >> 8);
-				this.helperView.setUint8(pos++, value);
+				this.#helperView.setUint8(pos++, (1 << 2) | ((value / 2**40) & 0x3));
+				this.#helperView.setUint8(pos++, (value / 2**32) | 0);
+				this.#helperView.setUint8(pos++, value >> 24);
+				this.#helperView.setUint8(pos++, value >> 16);
+				this.#helperView.setUint8(pos++, value >> 8);
+				this.#helperView.setUint8(pos++, value);
 				break;
 			default:
 				throw new Error('Bad EBML VINT size ' + width);
 		}
 
-		this.write(this.helper.subarray(0, pos));
+		this.write(this.#helper.subarray(0, pos));
 	}
 
 	// Assumes the string is ASCII
-	writeString(str: string) {
+	#writeString(str: string) {
 		this.write(new Uint8Array(str.split('').map(x => x.charCodeAt(0))));
 	}
 
@@ -122,7 +122,7 @@ export abstract class WriteTarget {
 		} else {
 			this.offsets.set(data, this.pos);
 
-			this.writeUnsignedInt(data.id); // ID field
+			this.#writeUnsignedInt(data.id); // ID field
 
 			if (Array.isArray(data.data)) {
 				let sizePos = this.pos;
@@ -142,90 +142,51 @@ export abstract class WriteTarget {
 			} else if (typeof data.data === 'number') {
 				let size = data.size ?? measureUnsignedInt(data.data);
 				this.writeEBMLVarInt(size);
-				this.writeUnsignedInt(data.data, size);
+				this.#writeUnsignedInt(data.data, size);
 			} else if (typeof data.data === 'string') {
 				this.writeEBMLVarInt(data.data.length);
-				this.writeString(data.data);
+				this.#writeString(data.data);
 			} else if (data.data instanceof Uint8Array) {
 				this.writeEBMLVarInt(data.data.byteLength, data.size);
 				this.write(data.data);
 			} else if (data.data instanceof EBMLFloat32) {
 				this.writeEBMLVarInt(4);
-				this.writeFloat32(data.data.value);
+				this.#writeFloat32(data.data.value);
 			} else if (data.data instanceof EBMLFloat64) {
 				this.writeEBMLVarInt(8);
-				this.writeFloat64(data.data.value);
+				this.#writeFloat64(data.data.value);
 			}
 		}
 	}
 }
 
-const measureUnsignedInt = (value: number) => {
-	// Force to 32-bit unsigned integer
-	if (value < (1 << 8)) {
-		return 1;
-	} else if (value < (1 << 16)) {
-		return 2;
-	} else if (value < (1 << 24)) {
-		return 3;
-	} else if (value < 2**32) {
-		return 4;
-	} else if (value < 2**40) {
-		return 5;
-	} else {
-		return 6;
-	}
-};
-
-const measureEBMLVarInt = (value: number) => {
-	if (value < (1 << 7) - 1) {
-		/** Top bit is set, leaving 7 bits to hold the integer, but we can't store
-		 * 127 because "all bits set to one" is a reserved value. Same thing for the
-		 * other cases below:
-		 */
-		return 1;
-	} else if (value < (1 << 14) - 1) {
-		return 2;
-	} else if (value < (1 << 21) - 1) {
-		return 3;
-	} else if (value < (1 << 28) - 1) {
-		return 4;
-	} else if (value < 2**35-1) {
-		return 5;
-	} else if (value < 2**42-1) {
-		return 6;
-	} else {
-		throw new Error('EBML VINT size not supported ' + value);
-	}
-};
-
 /** A simple WriteTarget where all data is written into a dynamically-growing buffer in memory. */
 export class ArrayBufferWriteTarget extends WriteTarget {
-	buffer = new ArrayBuffer(2**16);
-	bytes = new Uint8Array(this.buffer);
+	#buffer = new ArrayBuffer(2**16);
+	#bytes = new Uint8Array(this.#buffer);
 
 	constructor() {
 		super();
 	}
 
 	ensureSize(size: number) {
-		let newLength = this.buffer.byteLength;
+		let newLength = this.#buffer.byteLength;
 		while (newLength < size) newLength *= 2;
 
-		if (newLength === this.buffer.byteLength) return;
+		if (newLength === this.#buffer.byteLength) return;
 
 		let newBuffer = new ArrayBuffer(newLength);
 		let newBytes = new Uint8Array(newBuffer);
-		newBytes.set(this.bytes, 0);
+		newBytes.set(this.#bytes, 0);
 
-		this.buffer = newBuffer;
-		this.bytes = newBytes;
+		this.#buffer = newBuffer;
+		this.#bytes = newBytes;
 	}
 
 	write(data: Uint8Array) {
 		this.ensureSize(this.pos + data.byteLength);
 
-		this.bytes.set(data, this.pos);
+		this.#bytes.set(data, this.pos);
 		this.pos += data.byteLength;
 	}
 
@@ -235,7 +196,7 @@ export class ArrayBufferWriteTarget extends WriteTarget {
 
 	finalize() {
 		this.ensureSize(this.pos);
-		return this.buffer.slice(0, this.pos);
+		return this.#buffer.slice(0, this.pos);
 	}
 }
 
@@ -260,17 +221,17 @@ interface FileChunkSection {
  * only large chunks of data to disk periodically.
  */
 export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
-	stream: FileSystemWritableFileStream;
+	#stream: FileSystemWritableFileStream;
 	/**
 	 * The file is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed to disk.
 	 * A chunk is flushed to disk if all of its contents have been written.
 	 */
-	chunks: FileChunk[] = [];
+	#chunks: FileChunk[] = [];
 
 	constructor(stream: FileSystemWritableFileStream) {
 		super();
 
-		this.stream = stream;
+		this.#stream = stream;
 	}
 
 	write(data: Uint8Array) {
@@ -282,9 +243,9 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 
 	writeDataIntoChunks(data: Uint8Array, position: number) {
 		// First, find the chunk to write the data into, or create one if none exists
-		let chunkIndex = this.chunks.findIndex(x => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
+		let chunkIndex = this.#chunks.findIndex(x => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
 		if (chunkIndex === -1) chunkIndex = this.createChunk(position);
-		let chunk = this.chunks[chunkIndex];
+		let chunk = this.#chunks[chunkIndex];
 
 		// Figure out how much to write to the chunk, and then write to the chunk
 		let relativePosition = position - chunk.start;
@@ -304,10 +265,10 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 		}
 
 		// Make sure we don't hold too many chunks in memory at once to keep memory usage down
-		if (this.chunks.length > MAX_CHUNKS_AT_ONCE) {
+		if (this.#chunks.length > MAX_CHUNKS_AT_ONCE) {
 			// Flush all but the last chunk
-			for (let i = 0; i < this.chunks.length-1; i++) {
-				this.chunks[i].shouldFlush = true;
+			for (let i = 0; i < this.#chunks.length-1; i++) {
+				this.#chunks[i].shouldFlush = true;
 			}
 			this.flushChunks();
 		}
@@ -326,25 +287,25 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 			written: [],
 			shouldFlush: false
 		};
-		this.chunks.push(chunk);
-		this.chunks.sort((a, b) => a.start - b.start);
+		this.#chunks.push(chunk);
+		this.#chunks.sort((a, b) => a.start - b.start);
 
-		return this.chunks.indexOf(chunk);
+		return this.#chunks.indexOf(chunk);
 	}
 
 	flushChunks(force = false) {
-		for (let i = 0; i < this.chunks.length; i++) {
-			let chunk = this.chunks[i];
+		for (let i = 0; i < this.#chunks.length; i++) {
+			let chunk = this.#chunks[i];
 			if (!chunk.shouldFlush && !force) continue;
 
 			for (let section of chunk.written) {
-				this.stream.write({
+				this.#stream.write({
 					type: 'write',
 					data: chunk.data.subarray(section.start, section.end),
 					position: chunk.start + section.start
 				});
 			}
-			this.chunks.splice(i--, 1);
+			this.#chunks.splice(i--, 1);
 		}
 	}
 
