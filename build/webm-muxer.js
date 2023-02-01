@@ -341,6 +341,60 @@ var WebMMuxer = (() => {
       chunk.written.splice(index + 1, 1);
     }
   };
+  var _sections, _onFlush;
+  var StreamingWriteTarget = class extends WriteTarget {
+    constructor(onFlush) {
+      super();
+      __privateAdd(this, _sections, []);
+      __privateAdd(this, _onFlush, void 0);
+      __privateSet(this, _onFlush, onFlush);
+    }
+    write(data) {
+      __privateGet(this, _sections).push({
+        data: data.slice(),
+        start: this.pos
+      });
+      this.pos += data.byteLength;
+    }
+    seek(newPos) {
+      this.pos = newPos;
+    }
+    flush(done) {
+      if (__privateGet(this, _sections).length === 0)
+        return;
+      let chunks = [];
+      let sorted = [...__privateGet(this, _sections)].sort((a, b) => a.start - b.start);
+      chunks.push({
+        start: sorted[0].start,
+        size: sorted[0].data.byteLength
+      });
+      for (let i = 1; i < sorted.length; i++) {
+        let lastChunk = chunks[chunks.length - 1];
+        let section = sorted[i];
+        if (section.start <= lastChunk.start + lastChunk.size) {
+          lastChunk.size = Math.max(lastChunk.size, section.start + section.data.byteLength - lastChunk.start);
+        } else {
+          chunks.push({
+            start: section.start,
+            size: section.data.byteLength
+          });
+        }
+      }
+      for (let chunk of chunks) {
+        chunk.data = new Uint8Array(chunk.size);
+        for (let section of __privateGet(this, _sections)) {
+          if (chunk.start <= section.start && section.start < chunk.start + chunk.size) {
+            chunk.data.set(section.data, section.start - chunk.start);
+          }
+        }
+        let isLastFlush = done && chunk === chunks[chunks.length - 1];
+        __privateGet(this, _onFlush).call(this, chunk.data, chunk.start, isLastFlush);
+      }
+      __privateGet(this, _sections).length = 0;
+    }
+  };
+  _sections = new WeakMap();
+  _onFlush = new WeakMap();
 
   // src/main.ts
   var VIDEO_TRACK_NUMBER = 1;
@@ -352,7 +406,7 @@ var WebMMuxer = (() => {
   var APP_NAME = "https://github.com/Vanilagy/webm-muxer";
   var SEGMENT_SIZE_BYTES = 6;
   var CLUSTER_SIZE_BYTES = 5;
-  var _target, _options, _segment, _segmentInfo, _seekHead, _tracksElement, _segmentDuration, _colourElement, _videoCodecPrivate, _audioCodecPrivate, _cues, _currentCluster, _currentClusterTimestamp, _duration, _videoChunkQueue, _audioChunkQueue, _lastVideoTimestamp, _lastAudioTimestamp, _colorSpace, _finalized, _validateOptions, validateOptions_fn, _createFileHeader, createFileHeader_fn, _writeEBMLHeader, writeEBMLHeader_fn, _createSeekHead, createSeekHead_fn, _createSegmentInfo, createSegmentInfo_fn, _createTracks, createTracks_fn, _createSegment, createSegment_fn, _createCues, createCues_fn, _segmentDataOffset, segmentDataOffset_get, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn, _fixVP9ColorSpace, fixVP9ColorSpace_fn, _createInternalChunk, createInternalChunk_fn, _writeSimpleBlock, writeSimpleBlock_fn, _writeCodecPrivate, writeCodecPrivate_fn, _createNewCluster, createNewCluster_fn, _finalizeCurrentCluster, finalizeCurrentCluster_fn, _ensureNotFinalized, ensureNotFinalized_fn;
+  var _target, _options, _segment, _segmentInfo, _seekHead, _tracksElement, _segmentDuration, _colourElement, _videoCodecPrivate, _audioCodecPrivate, _cues, _currentCluster, _currentClusterTimestamp, _duration, _videoChunkQueue, _audioChunkQueue, _lastVideoTimestamp, _lastAudioTimestamp, _colorSpace, _finalized, _validateOptions, validateOptions_fn, _createFileHeader, createFileHeader_fn, _writeEBMLHeader, writeEBMLHeader_fn, _createSeekHead, createSeekHead_fn, _createSegmentInfo, createSegmentInfo_fn, _createTracks, createTracks_fn, _createSegment, createSegment_fn, _createCues, createCues_fn, _maybeFlushStreamingTarget, maybeFlushStreamingTarget_fn, _segmentDataOffset, segmentDataOffset_get, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn, _fixVP9ColorSpace, fixVP9ColorSpace_fn, _createInternalChunk, createInternalChunk_fn, _writeSimpleBlock, writeSimpleBlock_fn, _writeCodecPrivate, writeCodecPrivate_fn, _createNewCluster, createNewCluster_fn, _finalizeCurrentCluster, finalizeCurrentCluster_fn, _ensureNotFinalized, ensureNotFinalized_fn;
   var WebMMuxer = class {
     constructor(options) {
       __privateAdd(this, _validateOptions);
@@ -363,6 +417,7 @@ var WebMMuxer = (() => {
       __privateAdd(this, _createTracks);
       __privateAdd(this, _createSegment);
       __privateAdd(this, _createCues);
+      __privateAdd(this, _maybeFlushStreamingTarget);
       __privateAdd(this, _segmentDataOffset);
       __privateAdd(this, _writeVideoDecoderConfig);
       __privateAdd(this, _fixVP9ColorSpace);
@@ -396,8 +451,12 @@ var WebMMuxer = (() => {
       __privateSet(this, _options, options);
       if (options.target === "buffer") {
         __privateSet(this, _target, new ArrayBufferWriteTarget());
-      } else {
+      } else if (options.target instanceof FileSystemWritableFileStream) {
         __privateSet(this, _target, new FileSystemWritableFileStreamWriteTarget(options.target));
+      } else if (typeof options.target === "function") {
+        __privateSet(this, _target, new StreamingWriteTarget(options.target));
+      } else {
+        throw new Error(`Invalid target: ${options.target}`);
       }
       __privateMethod(this, _createFileHeader, createFileHeader_fn).call(this);
     }
@@ -425,6 +484,7 @@ var WebMMuxer = (() => {
       } else {
         __privateGet(this, _videoChunkQueue).push(internalChunk);
       }
+      __privateMethod(this, _maybeFlushStreamingTarget, maybeFlushStreamingTarget_fn).call(this);
     }
     addAudioChunk(chunk, meta, timestamp) {
       let data = new Uint8Array(chunk.byteLength);
@@ -449,6 +509,7 @@ var WebMMuxer = (() => {
       if (meta == null ? void 0 : meta.decoderConfig) {
         __privateMethod(this, _writeCodecPrivate, writeCodecPrivate_fn).call(this, __privateGet(this, _audioCodecPrivate), meta.decoderConfig.description);
       }
+      __privateMethod(this, _maybeFlushStreamingTarget, maybeFlushStreamingTarget_fn).call(this);
     }
     finalize() {
       while (__privateGet(this, _videoChunkQueue).length > 0)
@@ -475,6 +536,8 @@ var WebMMuxer = (() => {
         return __privateGet(this, _target).finalize();
       } else if (__privateGet(this, _target) instanceof FileSystemWritableFileStreamWriteTarget) {
         __privateGet(this, _target).finalize();
+      } else if (__privateGet(this, _target) instanceof StreamingWriteTarget) {
+        __privateGet(this, _target).flush(true);
       }
       return null;
     }
@@ -513,6 +576,7 @@ var WebMMuxer = (() => {
     __privateMethod(this, _createTracks, createTracks_fn).call(this);
     __privateMethod(this, _createSegment, createSegment_fn).call(this);
     __privateMethod(this, _createCues, createCues_fn).call(this);
+    __privateMethod(this, _maybeFlushStreamingTarget, maybeFlushStreamingTarget_fn).call(this);
   };
   _writeEBMLHeader = new WeakSet();
   writeEBMLHeader_fn = function() {
@@ -617,6 +681,12 @@ var WebMMuxer = (() => {
   _createCues = new WeakSet();
   createCues_fn = function() {
     __privateSet(this, _cues, { id: 475249515 /* Cues */, data: [] });
+  };
+  _maybeFlushStreamingTarget = new WeakSet();
+  maybeFlushStreamingTarget_fn = function() {
+    if (__privateGet(this, _target) instanceof StreamingWriteTarget) {
+      __privateGet(this, _target).flush(false);
+    }
   };
   _segmentDataOffset = new WeakSet();
   segmentDataOffset_get = function() {

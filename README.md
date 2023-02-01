@@ -65,6 +65,7 @@ object, like so:
 ```
 
 ## Usage
+### Initialization
 For each WebM file you wish to create, create an instance of `WebMMuxer` like so:
 ```js
 let muxer = new WebMMuxer(options);
@@ -72,19 +73,19 @@ let muxer = new WebMMuxer(options);
 The available options are defined by the following interface:
 ```ts
 interface WebMMuxerOptions {
-    // When 'buffer' is used, the muxed file is written to a buffer in
-    // memory. When a FileSystemWritableFileStream acquired through
-    // the File System Access API (see example below) is used, the
-    // muxed file is written directly to disk, allowing for files way
-    // larger than what would fit in RAM.
-    target: 'buffer' | FileSystemWritableFileStream,
-    type?: 'webm' | 'matroska', // Optional - see Details for more
+    target: 'buffer'
+        | ((data: Uint8Array, offset: number, done: boolean) => void)
+        | FileSystemWritableFileStream
+
+    type?: 'webm' | 'matroska',
+
     video?: {
         codec: string,
         width: number,
         height: number,
         frameRate?: number // Optional, adds metadata to the file
     },
+
     audio?: {
         codec: string,
         numberOfChannels: number,
@@ -93,59 +94,79 @@ interface WebMMuxerOptions {
     }
 }
 ```
-Codecs supported by WebM are `V_VP8`, `V_VP9`, `V_AV1`, `A_OPUS` and `A_VORBIS`.
+Codecs officially supported by WebM are `V_VP8`, `V_VP9`, `V_AV1`, `A_OPUS` and `A_VORBIS`.
+#### `target`
+This option specifies what will happens with the data created by the muxer. The options are:
+- `'buffer'`: The file data will be written into a single, large buffer which is then returned by `finalize`.
 
-Some examples:
-```js
-// Create a muxer with a video track running the VP9 codec, and no
-// audio track. The muxed file is written to a buffer in memory.
-let muxer1 = new WebMMuxer({
-    target: 'buffer',
-    video: {
-        codec: 'V_VP9',
-        width: 1280,
-        height: 720
-    }
-});
+    ```js
+    let muxer = new WebMMuxer({
+        target: 'buffer',
+        video: {
+            codec: 'V_VP9',
+            width: 1280,
+            height: 720
+        }
+    });
 
-// Create a muxer with a video track running the VP9 codec, and an
-// audio track running the Opus codec. The muxed file is written
-// directly to a file on disk, using the File System Access API.
-let fileHandle = await window.showSaveFilePicker({
-    suggestedName: `video.webm`,
-    types: [{
-        description: 'Video File',
-        accept: { 'video/webm': ['.webm'] }
-    }],
-});
-let fileWritableStream = await fileHandle.createWritable();
-let muxer2 = new WebMMuxer({
-    target: fileWritableStream,
-    video: {
-        codec: 'V_VP9',
-        width: 1920,
-        height: 1080,
-        frameRate: 60
-    },
-    audio: {
-        codec: 'A_OPUS',
-        numberOfChannels: 2,
-        sampleRate: 48000
-    }
-});
+    // ...
 
-// Create a muxer running only an Opus-coded audio track, and
-// no video. Writes to a buffer in memory.
-let muxer3 = new WebMMuxer({
-    target: 'buffer',
-    audio: {
-        codec: 'A_OPUS',
-        numberOfChannels: 1,
-        sampleRate: 44100
-    }
-});
-```
+    let buffer = muxer.finalize();
+    ```
+- `function`: If the target is a function, it will be called each time data is output by the muxer - this is useful if
+    you want to stream the data. The function will be called with three arguments: the data to write, the offset in
+    bytes at which to write the data and a boolean indicating whether the muxer is done writing data. Note that the same
+    segment of bytes might be written to multiple times and therefore you need to write the data in the same order the
+    function gave it to you.
 
+    ```js
+    let muxer = new WebMMuxer({
+        target: (data, offset, done) => {
+            // Do something with the data
+        },
+        audio: {
+            codec: 'A_OPUS',
+            numberOfChannels: 1,
+            sampleRate: 44100
+        }
+    });
+    ```
+- `FileSystemWritableFileStream`: When acquired through the File System Access API, the
+    muxed file is written directly to disk, allowing for files way larger than what would fit in RAM. This functionality could also be manually emulated by passing a `function` instead, however, this library has some built-in write batching optimization which will be used when passing a FileSystemWritableFileStream.
+
+    ```js
+    let fileHandle = await window.showSaveFilePicker({
+        suggestedName: `video.webm`,
+        types: [{
+            description: 'Video File',
+            accept: { 'video/webm': ['.webm'] }
+        }],
+    });
+    let fileWritableStream = await fileHandle.createWritable();
+    let muxer = new WebMMuxer({
+        target: fileWritableStream,
+        video: {
+            codec: 'V_VP9',
+            width: 1920,
+            height: 1080,
+            frameRate: 60
+        },
+        audio: {
+            codec: 'A_OPUS',
+            numberOfChannels: 2,
+            sampleRate: 48000
+        }
+    });
+    ```
+#### `type`
+As WebM is a subset of the more general Matroska multimedia container format, this library muxes both WebM and Matroska
+files. WebM, according to the official specification, supports only a small subset of the codecs supported by Matroska.
+It is likely, however, that most players will successfully play back a WebM file with codecs other than the ones
+supported in the spec. To be on the safe side, however, you can set the `type` option to `'matroska'`, which
+will internally label the file as a general Matroska file. If you do this, your output file should also have the .mkv
+extension.
+
+### Muxing media chunks
 Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxer like so:
 ```js
 muxer.addVideoChunk(encodedVideoChunk, encodedVideoChunkMetadata);
@@ -183,6 +204,7 @@ addAudioChunkRaw(
 ): void;
 ```
 
+### Finishing up
 When encoding is finished, call `finalize` on the `WebMMuxer` instance to finalize the WebM file. When using
 `target: 'buffer'`, the resulting file's buffer is returned by this method:
 ```js
@@ -210,14 +232,6 @@ your video frames and then encode the audio afterwards, the multiplexer will hav
 memory until the audio chunks start coming in. This might lead to memory exhaustion should your video be very long.
 When there is only one media track, this issue does not arise. So, when muxing a multimedia file, make sure it is
 somewhat limited in size or the chunks are encoded in a somewhat interleaved way (like is the case for live media).
-
-### WebM vs Matroska DocType
-As WebM is a subset of the more general Matroska multimedia container format, this library muxes both WebM and Matroska
-files. WebM, according to the official specification, supports only a small subset of the codecs supported by Matroska.
-It is likely, however, that most players will successfully play back a WebM file with codecs other than the ones
-supported in the spec. To be on the safe side, however, you can set the options' `type` property to `'matroska'`, which
-will internally label the file as a general Matroska file. If you do this, your output file should also have the .mkv
-extension.
 
 ### Size "limits"
 This library can mux WebM files up to a total size of ~4398 GB and with a Matroska Cluster size of ~34 GB.

@@ -384,3 +384,81 @@ const insertSectionIntoFileChunk = (chunk: FileChunk, section: FileChunkSection)
 		chunk.written.splice(index + 1, 1);
 	}
 };
+
+/**
+ * This WriteTarget will fire a callback every time it is flushed, sending out all of the new data written since the
+ * last flush. This is useful for streaming applications.
+ */
+export class StreamingWriteTarget extends WriteTarget {
+	#sections: {
+		data: Uint8Array,
+		start: number
+	}[] = [];
+	#onFlush: (data: Uint8Array, offset: number, done: boolean) => void;
+
+	constructor(onFlush: (data: Uint8Array, offset: number, done: boolean) => void) {
+		super();
+
+		this.#onFlush = onFlush;
+	}
+
+	write(data: Uint8Array) {
+		this.#sections.push({
+			data: data.slice(),
+			start: this.pos
+		});
+		this.pos += data.byteLength;
+	}
+
+	seek(newPos: number) {
+		this.pos = newPos;
+	}
+
+	flush(done: boolean) {
+		if (this.#sections.length === 0) return;
+
+		let chunks: {
+			start: number,
+			size: number,
+			data?: Uint8Array
+		}[] = [];
+		let sorted = [...this.#sections].sort((a, b) => a.start - b.start);
+
+		chunks.push({
+			start: sorted[0].start,
+			size: sorted[0].data.byteLength
+		});
+
+		// Figure out how many contiguous chunks we have
+		for (let i = 1; i < sorted.length; i++) {
+			let lastChunk = chunks[chunks.length - 1];
+			let section = sorted[i];
+
+			if (section.start <= lastChunk.start + lastChunk.size) {
+				lastChunk.size = Math.max(lastChunk.size, section.start + section.data.byteLength - lastChunk.start);
+			} else {
+				chunks.push({
+					start: section.start,
+					size: section.data.byteLength
+				});
+			}
+		}
+
+		for (let chunk of chunks) {
+			chunk.data = new Uint8Array(chunk.size);
+
+			// Make sure to write the data in the correct order for correct overwriting
+			for (let section of this.#sections) {
+				// Check if the section is in the chunk
+				if (chunk.start <= section.start && section.start < chunk.start + chunk.size) {
+					chunk.data.set(section.data, section.start - chunk.start);
+				}
+			}
+
+			let isLastFlush = done && chunk === chunks[chunks.length - 1];
+			this.#onFlush(chunk.data, chunk.start, isLastFlush);
+		}
+
+		this.#sections.length = 0;
+	}
+}
