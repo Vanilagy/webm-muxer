@@ -4,7 +4,7 @@
 [![](https://img.shields.io/bundlephobia/minzip/webm-muxer)](https://bundlephobia.com/package/webm-muxer)
 
 The WebCodecs API provides low-level access to media codecs, but provides no way of actually packaging (multiplexing)
-the encoded media into a playable file. This project implements a WebM multiplexer in pure TypeScript, which is
+the encoded media into a playable file. This project implements a WebM/Matroska multiplexer in pure TypeScript, which is
 high-quality, fast and tiny, and supports both video and audio.
 
 [Demo](https://vanilagy.github.io/webm-muxer/demo/)
@@ -78,6 +78,7 @@ interface WebMMuxerOptions {
     // muxed file is written directly to disk, allowing for files way
     // larger than what would fit in RAM.
     target: 'buffer' | FileSystemWritableFileStream,
+    type?: 'webm' | 'matroska', // Optional - see Details for more
     video?: {
         codec: string,
         width: number,
@@ -209,6 +210,14 @@ your video frames and then encode the audio afterwards, the multiplexer will hav
 memory until the audio chunks start coming in. This might lead to memory exhaustion should your video be very long.
 When there is only one media track, this issue does not arise. So, when muxing a multimedia file, make sure it is
 somewhat limited in size or the chunks are encoded in a somewhat interleaved way (like is the case for live media).
+
+### WebM vs Matroska DocType
+As WebM is a subset of the more general Matroska multimedia container format, this library muxes both WebM and Matroska
+files. WebM, according to the official specification, supports only a small subset of the codecs supported by Matroska.
+It is likely, however, that most players will successfully play back a WebM file with codecs other than the ones
+supported in the spec. To be on the safe side, however, you can set the options' `type` property to `'matroska'`, which
+will internally label the file as a general Matroska file. If you do this, your output file should also have the .mkv
+extension.
 
 ### Size "limits"
 This library can mux WebM files up to a total size of ~4398 GB and with a Matroska Cluster size of ~34 GB.

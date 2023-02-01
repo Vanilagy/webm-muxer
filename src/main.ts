@@ -13,6 +13,7 @@ const CLUSTER_SIZE_BYTES = 5;
 
 interface WebMMuxerOptions {
 	target: 'buffer' | FileSystemWritableFileStream,
+	type?: 'webm' | 'matroska'
 	video?: {
 		codec: string,
 		width: number,
@@ -74,6 +75,7 @@ class WebMMuxer {
 	#finalized = false;
 
 	constructor(options: WebMMuxerOptions) {
+		this.#validateOptions(options);
 		this.#options = options;
 
 		if (options.target === 'buffer') {
@@ -83,6 +85,12 @@ class WebMMuxer {
 		}
 
 		this.#createFileHeader();
+	}
+
+	#validateOptions(options: WebMMuxerOptions) {
+		if (options.type && options.type !== 'webm' && options.type !== 'matroska') {
+			throw new Error(`Invalid type: ${options.type}`);
+		}
 	}
 
 	#createFileHeader() {
@@ -100,7 +108,7 @@ class WebMMuxer {
 			{ id: EBMLId.EBMLReadVersion, data: 1 },
 			{ id: EBMLId.EBMLMaxIDLength, data: 4 },
 			{ id: EBMLId.EBMLMaxSizeLength, data: 8 },
-			{ id: EBMLId.DocType, data: 'webm' },
+			{ id: EBMLId.DocType, data: this.#options.type ?? 'webm' },
 			{ id: EBMLId.DocTypeVersion, data: 2 },
 			{ id: EBMLId.DocTypeReadVersion, data: 2 }
 		] };

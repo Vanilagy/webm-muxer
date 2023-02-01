@@ -352,9 +352,10 @@ var WebMMuxer = (() => {
   var APP_NAME = "https://github.com/Vanilagy/webm-muxer";
   var SEGMENT_SIZE_BYTES = 6;
   var CLUSTER_SIZE_BYTES = 5;
-  var _target, _options, _segment, _segmentInfo, _seekHead, _tracksElement, _segmentDuration, _colourElement, _videoCodecPrivate, _audioCodecPrivate, _cues, _currentCluster, _currentClusterTimestamp, _duration, _videoChunkQueue, _audioChunkQueue, _lastVideoTimestamp, _lastAudioTimestamp, _colorSpace, _finalized, _createFileHeader, createFileHeader_fn, _writeEBMLHeader, writeEBMLHeader_fn, _createSeekHead, createSeekHead_fn, _createSegmentInfo, createSegmentInfo_fn, _createTracks, createTracks_fn, _createSegment, createSegment_fn, _createCues, createCues_fn, _segmentDataOffset, segmentDataOffset_get, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn, _fixVP9ColorSpace, fixVP9ColorSpace_fn, _createInternalChunk, createInternalChunk_fn, _writeSimpleBlock, writeSimpleBlock_fn, _writeCodecPrivate, writeCodecPrivate_fn, _createNewCluster, createNewCluster_fn, _finalizeCurrentCluster, finalizeCurrentCluster_fn, _ensureNotFinalized, ensureNotFinalized_fn;
+  var _target, _options, _segment, _segmentInfo, _seekHead, _tracksElement, _segmentDuration, _colourElement, _videoCodecPrivate, _audioCodecPrivate, _cues, _currentCluster, _currentClusterTimestamp, _duration, _videoChunkQueue, _audioChunkQueue, _lastVideoTimestamp, _lastAudioTimestamp, _colorSpace, _finalized, _validateOptions, validateOptions_fn, _createFileHeader, createFileHeader_fn, _writeEBMLHeader, writeEBMLHeader_fn, _createSeekHead, createSeekHead_fn, _createSegmentInfo, createSegmentInfo_fn, _createTracks, createTracks_fn, _createSegment, createSegment_fn, _createCues, createCues_fn, _segmentDataOffset, segmentDataOffset_get, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn, _fixVP9ColorSpace, fixVP9ColorSpace_fn, _createInternalChunk, createInternalChunk_fn, _writeSimpleBlock, writeSimpleBlock_fn, _writeCodecPrivate, writeCodecPrivate_fn, _createNewCluster, createNewCluster_fn, _finalizeCurrentCluster, finalizeCurrentCluster_fn, _ensureNotFinalized, ensureNotFinalized_fn;
   var WebMMuxer = class {
     constructor(options) {
+      __privateAdd(this, _validateOptions);
       __privateAdd(this, _createFileHeader);
       __privateAdd(this, _writeEBMLHeader);
       __privateAdd(this, _createSeekHead);
@@ -391,6 +392,7 @@ var WebMMuxer = (() => {
       __privateAdd(this, _lastAudioTimestamp, 0);
       __privateAdd(this, _colorSpace, void 0);
       __privateAdd(this, _finalized, false);
+      __privateMethod(this, _validateOptions, validateOptions_fn).call(this, options);
       __privateSet(this, _options, options);
       if (options.target === "buffer") {
         __privateSet(this, _target, new ArrayBufferWriteTarget());
@@ -497,6 +499,12 @@ var WebMMuxer = (() => {
   _lastAudioTimestamp = new WeakMap();
   _colorSpace = new WeakMap();
   _finalized = new WeakMap();
+  _validateOptions = new WeakSet();
+  validateOptions_fn = function(options) {
+    if (options.type && options.type !== "webm" && options.type !== "matroska") {
+      throw new Error(`Invalid type: ${options.type}`);
+    }
+  };
   _createFileHeader = new WeakSet();
   createFileHeader_fn = function() {
     __privateMethod(this, _writeEBMLHeader, writeEBMLHeader_fn).call(this);
@@ -508,12 +516,13 @@ var WebMMuxer = (() => {
   };
   _writeEBMLHeader = new WeakSet();
   writeEBMLHeader_fn = function() {
+    var _a;
     let ebmlHeader = { id: 440786851 /* EBML */, data: [
       { id: 17030 /* EBMLVersion */, data: 1 },
       { id: 17143 /* EBMLReadVersion */, data: 1 },
       { id: 17138 /* EBMLMaxIDLength */, data: 4 },
       { id: 17139 /* EBMLMaxSizeLength */, data: 8 },
-      { id: 17026 /* DocType */, data: "webm" },
+      { id: 17026 /* DocType */, data: (_a = __privateGet(this, _options).type) != null ? _a : "webm" },
       { id: 17031 /* DocTypeVersion */, data: 2 },
       { id: 17029 /* DocTypeReadVersion */, data: 2 }
     ] };

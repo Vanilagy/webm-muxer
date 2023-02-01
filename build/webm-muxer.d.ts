@@ -14,6 +14,13 @@ declare interface WebMMuxerOptions {
 	 */
 	target: 'buffer' | FileSystemWritableFileStream,
 	/**
+	 * Specifies the docType of the muxed multimedia file. This property is optional and defaults to `'webm'`, which is
+	 * a subset of the more general container format, Matroska. Using `'matroska'` alongside an .mkv extension will
+	 * allow you to use all codecs, not just the ones officially supported by WebM. However, there is generally less
+	 * support for .mkv files than there is for .webm and it is less ubiquitous on the web.
+	 */
+	type?: 'webm' | 'matroska',
+	/**
 	 * When set, declares the existence of a video track in the WebM file and configures that video track.
 	 */
 	video?: {
