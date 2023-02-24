@@ -77,8 +77,6 @@ interface WebMMuxerOptions {
         | ((data: Uint8Array, offset: number, done: boolean) => void)
         | FileSystemWritableFileStream
 
-    type?: 'webm' | 'matroska',
-
     video?: {
         codec: string,
         width: number,
@@ -91,7 +89,11 @@ interface WebMMuxerOptions {
         numberOfChannels: number,
         sampleRate: number,
         bitDepth?: number // Mainly necessary for PCM-coded audio
-    }
+    },
+
+    type?: 'webm' | 'matroska',
+
+    firstTimestampBehavior?: 'strict' | 'offset' | 'permissive'
 }
 ```
 Codecs officially supported by WebM are `V_VP8`, `V_VP9`, `V_AV1`, `A_OPUS` and `A_VORBIS`.
@@ -158,13 +160,22 @@ This option specifies what will happens with the data created by the muxer. The 
         }
     });
     ```
-#### `type`
+#### `type` (optional)
 As WebM is a subset of the more general Matroska multimedia container format, this library muxes both WebM and Matroska
 files. WebM, according to the official specification, supports only a small subset of the codecs supported by Matroska.
 It is likely, however, that most players will successfully play back a WebM file with codecs other than the ones
 supported in the spec. To be on the safe side, however, you can set the `type` option to `'matroska'`, which
 will internally label the file as a general Matroska file. If you do this, your output file should also have the .mkv
 extension.
+#### `firstTimestampBehavior` (optional)
+Specifies how to deal with the first chunk in each track having a non-zero timestamp. In the default strict mode,
+timestamps must start with 0 to ensure proper playback. However, when directly pumping video frames or audio data
+from a MediaTrackStream into the encoder and then the muxer, the timestamps are usually relative to the age of
+the document or the computer's clock, which is typically not what we want. Handling of these timestamps must be
+set explicitly:
+- Use `'offset'` to offset the timestamp of each video track by that track's first chunk's timestamp. This way, it
+starts at 0.
+- Use `'permissive'` to allow the first timestamp to be non-zero.
 
 ### Muxing media chunks
 Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxer like so:

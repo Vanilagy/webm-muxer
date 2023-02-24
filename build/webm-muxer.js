@@ -3,8 +3,22 @@ var WebMMuxer = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __getOwnPropSymbols = Object.getOwnPropertySymbols;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __propIsEnum = Object.prototype.propertyIsEnumerable;
   var __pow = Math.pow;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __spreadValues = (a, b) => {
+    for (var prop in b ||= {})
+      if (__hasOwnProp.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    if (__getOwnPropSymbols)
+      for (var prop of __getOwnPropSymbols(b)) {
+        if (__propIsEnum.call(b, prop))
+          __defNormalProp(a, prop, b[prop]);
+      }
+    return a;
+  };
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
@@ -424,7 +438,8 @@ var WebMMuxer = (() => {
   var APP_NAME = "https://github.com/Vanilagy/webm-muxer";
   var SEGMENT_SIZE_BYTES = 6;
   var CLUSTER_SIZE_BYTES = 5;
-  var _target, _options, _segment, _segmentInfo, _seekHead, _tracksElement, _segmentDuration, _colourElement, _videoCodecPrivate, _audioCodecPrivate, _cues, _currentCluster, _currentClusterTimestamp, _duration, _videoChunkQueue, _audioChunkQueue, _lastVideoTimestamp, _lastAudioTimestamp, _colorSpace, _finalized, _validateOptions, validateOptions_fn, _createFileHeader, createFileHeader_fn, _writeEBMLHeader, writeEBMLHeader_fn, _createSeekHead, createSeekHead_fn, _createSegmentInfo, createSegmentInfo_fn, _createTracks, createTracks_fn, _createSegment, createSegment_fn, _createCues, createCues_fn, _maybeFlushStreamingTarget, maybeFlushStreamingTarget_fn, _segmentDataOffset, segmentDataOffset_get, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn, _fixVP9ColorSpace, fixVP9ColorSpace_fn, _createInternalChunk, createInternalChunk_fn, _writeSimpleBlock, writeSimpleBlock_fn, _writeCodecPrivate, writeCodecPrivate_fn, _createNewCluster, createNewCluster_fn, _finalizeCurrentCluster, finalizeCurrentCluster_fn, _ensureNotFinalized, ensureNotFinalized_fn;
+  var FIRST_TIMESTAMP_BEHAVIORS = ["strict", "offset", "permissive"];
+  var _target, _options, _segment, _segmentInfo, _seekHead, _tracksElement, _segmentDuration, _colourElement, _videoCodecPrivate, _audioCodecPrivate, _cues, _currentCluster, _currentClusterTimestamp, _duration, _videoChunkQueue, _audioChunkQueue, _firstVideoTimestamp, _firstAudioTimestamp, _lastVideoTimestamp, _lastAudioTimestamp, _colorSpace, _finalized, _validateOptions, validateOptions_fn, _createFileHeader, createFileHeader_fn, _writeEBMLHeader, writeEBMLHeader_fn, _createSeekHead, createSeekHead_fn, _createSegmentInfo, createSegmentInfo_fn, _createTracks, createTracks_fn, _createSegment, createSegment_fn, _createCues, createCues_fn, _maybeFlushStreamingTarget, maybeFlushStreamingTarget_fn, _segmentDataOffset, segmentDataOffset_get, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn, _fixVP9ColorSpace, fixVP9ColorSpace_fn, _createInternalChunk, createInternalChunk_fn, _validateTimestamp, validateTimestamp_fn, _writeSimpleBlock, writeSimpleBlock_fn, _writeCodecPrivate, writeCodecPrivate_fn, _createNewCluster, createNewCluster_fn, _finalizeCurrentCluster, finalizeCurrentCluster_fn, _ensureNotFinalized, ensureNotFinalized_fn;
   var WebMMuxer = class {
     constructor(options) {
       __privateAdd(this, _validateOptions);
@@ -440,6 +455,7 @@ var WebMMuxer = (() => {
       __privateAdd(this, _writeVideoDecoderConfig);
       __privateAdd(this, _fixVP9ColorSpace);
       __privateAdd(this, _createInternalChunk);
+      __privateAdd(this, _validateTimestamp);
       __privateAdd(this, _writeSimpleBlock);
       __privateAdd(this, _writeCodecPrivate);
       __privateAdd(this, _createNewCluster);
@@ -461,12 +477,17 @@ var WebMMuxer = (() => {
       __privateAdd(this, _duration, 0);
       __privateAdd(this, _videoChunkQueue, []);
       __privateAdd(this, _audioChunkQueue, []);
-      __privateAdd(this, _lastVideoTimestamp, 0);
-      __privateAdd(this, _lastAudioTimestamp, 0);
+      __privateAdd(this, _firstVideoTimestamp, void 0);
+      __privateAdd(this, _firstAudioTimestamp, void 0);
+      __privateAdd(this, _lastVideoTimestamp, -1);
+      __privateAdd(this, _lastAudioTimestamp, -1);
       __privateAdd(this, _colorSpace, void 0);
       __privateAdd(this, _finalized, false);
       __privateMethod(this, _validateOptions, validateOptions_fn).call(this, options);
-      __privateSet(this, _options, options);
+      __privateSet(this, _options, __spreadValues({
+        type: "webm",
+        firstTimestampBehavior: "strict"
+      }, options));
       if (options.target === "buffer") {
         __privateSet(this, _target, new ArrayBufferWriteTarget());
       } else if (options.target instanceof FileSystemWritableFileStream) {
@@ -487,6 +508,8 @@ var WebMMuxer = (() => {
       __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
       if (!__privateGet(this, _options).video)
         throw new Error("No video track declared.");
+      if (__privateGet(this, _firstVideoTimestamp) === void 0)
+        __privateSet(this, _firstVideoTimestamp, timestamp);
       if (meta)
         __privateMethod(this, _writeVideoDecoderConfig, writeVideoDecoderConfig_fn).call(this, meta);
       let internalChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, data, type, timestamp, VIDEO_TRACK_NUMBER);
@@ -513,6 +536,8 @@ var WebMMuxer = (() => {
       __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
       if (!__privateGet(this, _options).audio)
         throw new Error("No audio track declared.");
+      if (__privateGet(this, _firstAudioTimestamp) === void 0)
+        __privateSet(this, _firstAudioTimestamp, timestamp);
       let internalChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, data, type, timestamp, AUDIO_TRACK_NUMBER);
       __privateSet(this, _lastAudioTimestamp, internalChunk.timestamp);
       while (__privateGet(this, _videoChunkQueue).length > 0 && __privateGet(this, _videoChunkQueue)[0].timestamp <= internalChunk.timestamp) {
@@ -576,6 +601,8 @@ var WebMMuxer = (() => {
   _duration = new WeakMap();
   _videoChunkQueue = new WeakMap();
   _audioChunkQueue = new WeakMap();
+  _firstVideoTimestamp = new WeakMap();
+  _firstAudioTimestamp = new WeakMap();
   _lastVideoTimestamp = new WeakMap();
   _lastAudioTimestamp = new WeakMap();
   _colorSpace = new WeakMap();
@@ -584,6 +611,9 @@ var WebMMuxer = (() => {
   validateOptions_fn = function(options) {
     if (options.type && options.type !== "webm" && options.type !== "matroska") {
       throw new Error(`Invalid type: ${options.type}`);
+    }
+    if (options.firstTimestampBehavior && !FIRST_TIMESTAMP_BEHAVIORS.includes(options.firstTimestampBehavior)) {
+      throw new Error(`Invalid first timestamp behavior: ${options.firstTimestampBehavior}`);
     }
   };
   _createFileHeader = new WeakSet();
@@ -784,13 +814,36 @@ var WebMMuxer = (() => {
   };
   _createInternalChunk = new WeakSet();
   createInternalChunk_fn = function(data, type, timestamp, trackNumber) {
+    let adjustedTimestamp = __privateMethod(this, _validateTimestamp, validateTimestamp_fn).call(this, timestamp, trackNumber);
     let internalChunk = {
       data,
       type,
-      timestamp,
+      timestamp: adjustedTimestamp,
       trackNumber
     };
     return internalChunk;
+  };
+  _validateTimestamp = new WeakSet();
+  validateTimestamp_fn = function(timestamp, trackNumber) {
+    let firstTimestamp = trackNumber === VIDEO_TRACK_NUMBER ? __privateGet(this, _firstVideoTimestamp) : __privateGet(this, _firstAudioTimestamp);
+    let lastTimestamp = trackNumber === VIDEO_TRACK_NUMBER ? __privateGet(this, _lastVideoTimestamp) : __privateGet(this, _lastAudioTimestamp);
+    if (__privateGet(this, _options).firstTimestampBehavior === "strict" && lastTimestamp === -1 && timestamp !== 0) {
+      throw new Error(
+        `The first chunk for your media track must have a timestamp of 0 (received ${timestamp}). Non-zero first timestamps are often caused by directly piping frames or audio data from a MediaStreamTrack into the encoder. Their timestamps are typically relative to the age of the document, which is probably what you want.
+
+If you want to offset all timestamps of a track such that the first one is zero, set firstTimestampBehavior: 'offset' in the options.
+If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'permissive'.
+`
+      );
+    } else if (__privateGet(this, _options).firstTimestampBehavior === "offset") {
+      timestamp -= firstTimestamp;
+    }
+    if (timestamp < lastTimestamp) {
+      throw new Error(
+        `Timestamps must be monotonically increasing (went from ${lastTimestamp} to ${timestamp}).`
+      );
+    }
+    return timestamp;
   };
   _writeSimpleBlock = new WeakSet();
   writeSimpleBlock_fn = function(chunk) {

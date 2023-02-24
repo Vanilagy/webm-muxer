@@ -15,13 +15,13 @@ const CODEC_PRIVATE_MAX_SIZE = 2**12;
 const APP_NAME = 'https://github.com/Vanilagy/webm-muxer';
 const SEGMENT_SIZE_BYTES = 6;
 const CLUSTER_SIZE_BYTES = 5;
+const FIRST_TIMESTAMP_BEHAVIORS = ['strict',  'offset', 'permissive'] as const;
 
 interface WebMMuxerOptions {
 	target:
 		'buffer'
 		| ((data: Uint8Array, offset: number, done: boolean) => void)
-		| FileSystemWritableFileStream
-	type?: 'webm' | 'matroska'
+		| FileSystemWritableFileStream,
 	video?: {
 		codec: string,
 		width: number,
@@ -33,7 +33,9 @@ interface WebMMuxerOptions {
 		numberOfChannels: number,
 		sampleRate: number,
 		bitDepth?: number
-	}
+	},
+	type?: 'webm' | 'matroska',
+	firstTimestampBehavior?: typeof FIRST_TIMESTAMP_BEHAVIORS[number]
 }
 
 interface InternalMediaChunk {
@@ -77,14 +79,21 @@ class WebMMuxer {
 	#duration = 0;
 	#videoChunkQueue: InternalMediaChunk[] = [];
 	#audioChunkQueue: InternalMediaChunk[] = [];
-	#lastVideoTimestamp = 0;
-	#lastAudioTimestamp = 0;
+	#firstVideoTimestamp: number;
+	#firstAudioTimestamp: number;
+	#lastVideoTimestamp = -1;
+	#lastAudioTimestamp = -1;
 	#colorSpace: VideoColorSpaceInit;
 	#finalized = false;
 
 	constructor(options: WebMMuxerOptions) {
 		this.#validateOptions(options);
-		this.#options = options;
+
+		this.#options = {
+			type: 'webm',
+			firstTimestampBehavior: 'strict',
+			...options
+		};
 
 		if (options.target === 'buffer') {
 			this.#target = new ArrayBufferWriteTarget();
@@ -102,6 +111,10 @@ class WebMMuxer {
 	#validateOptions(options: WebMMuxerOptions) {
 		if (options.type && options.type !== 'webm' && options.type !== 'matroska') {
 			throw new Error(`Invalid type: ${options.type}`);
+		}
+
+		if (options.firstTimestampBehavior && !FIRST_TIMESTAMP_BEHAVIORS.includes(options.firstTimestampBehavior)) {
+			throw new Error(`Invalid first timestamp behavior: ${options.firstTimestampBehavior}`);
 		}
 	}
 
@@ -260,6 +273,7 @@ class WebMMuxer {
 		this.#ensureNotFinalized();
 		if (!this.#options.video) throw new Error("No video track declared.");
 
+		if (this.#firstVideoTimestamp === undefined) this.#firstVideoTimestamp = timestamp;
 		if (meta) this.#writeVideoDecoderConfig(meta);
 
 		let internalChunk = this.#createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
@@ -378,6 +392,8 @@ class WebMMuxer {
 		this.#ensureNotFinalized();
 		if (!this.#options.audio) throw new Error("No audio track declared.");
 
+		if (this.#firstAudioTimestamp === undefined) this.#firstAudioTimestamp = timestamp;
+
 		let internalChunk = this.#createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
 
 		// Algorithm explained in `addVideoChunk`
@@ -404,14 +420,43 @@ class WebMMuxer {
 
 	/** Converts a read-only external chunk into an internal one for easier use. */
 	#createInternalChunk(data: Uint8Array, type: 'key' | 'delta', timestamp: number, trackNumber: number) {
+		let adjustedTimestamp = this.#validateTimestamp(timestamp, trackNumber);
+
 		let internalChunk: InternalMediaChunk = {
 			data,
 			type,
-			timestamp,
+			timestamp: adjustedTimestamp,
 			trackNumber
 		};
 
 		return internalChunk;
+	}
+
+	#validateTimestamp(timestamp: number, trackNumber: number) {
+		let firstTimestamp = trackNumber === VIDEO_TRACK_NUMBER ? this.#firstVideoTimestamp : this.#firstAudioTimestamp;
+		let lastTimestamp = trackNumber === VIDEO_TRACK_NUMBER ? this.#lastVideoTimestamp : this.#lastAudioTimestamp;
+
+		// Check first timestamp behavior
+		if (this.#options.firstTimestampBehavior === 'strict' && lastTimestamp === -1 && timestamp !== 0) {
+			throw new Error(
+				`The first chunk for your media track must have a timestamp of 0 (received ${timestamp}). Non-zero ` +
+				`first timestamps are often caused by directly piping frames or audio data from a MediaStreamTrack ` +
+				`into the encoder. Their timestamps are typically relative to the age of the document, which is ` +
+				`probably what you want.\n\nIf you want to offset all timestamps of a track such that the first one ` +
+				`is zero, set firstTimestampBehavior: 'offset' in the options.\nIf you want to allow non-zero first ` +
+				`timestamps, set firstTimestampBehavior: 'permissive'.\n`
+			);
+		} else if (this.#options.firstTimestampBehavior === 'offset') {
+			timestamp -= firstTimestamp;
+		}
+
+		if (timestamp < lastTimestamp) {
+			throw new Error(
+				`Timestamps must be monotonically increasing (went from ${lastTimestamp} to ${timestamp}).`
+			);
+		}
+
+		return timestamp;
 	}
 
 	/** Writes an EBML SimpleBlock containing video or audio data to the file. */
