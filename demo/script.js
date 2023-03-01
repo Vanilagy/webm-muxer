@@ -16,15 +16,25 @@ let intervalId = null;
 let lastKeyFrame = null;
 
 const startRecording = async () => {
+	// Check for VideoEncoder availability
+	if (typeof VideoEncoder === 'undefined') {
+		alert("Looks like your user agent doesn't support VideoEncoder / WebCodecs API yet.");
+		return;
+	}
+
 	startRecordingButton.style.display = 'none';
 
-	// Try to get access to the user's microphone
-	let userMedia = null;
-	try {
-		userMedia = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-		audioTrack = userMedia.getAudioTracks()[0];
-	} catch (e) {}
-	if (!audioTrack) console.warn("Couldn't acquire a user media audio track.");
+	// Check for AudioEncoder availability
+	if (typeof AudioEncoder !== 'undefined') {
+		// Try to get access to the user's microphone
+		try {
+			let userMedia = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+			audioTrack = userMedia.getAudioTracks()[0];
+		} catch (e) {}
+		if (!audioTrack) console.warn("Couldn't acquire a user media audio track.");
+	} else {
+		console.warn("AudioEncoder not available; no need to acquire a user media audio track.");
+	}
 
 	endRecordingButton.style.display = 'block';
 
