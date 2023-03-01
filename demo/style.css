@@ -37,7 +37,6 @@ h2 {
 }
 
 canvas {
-	background: white;
 	border-radius: 10px;
 	outline: 3px solid rgb(202, 202, 202);
 }

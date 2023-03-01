@@ -26,7 +26,8 @@ interface WebMMuxerOptions {
 		codec: string,
 		width: number,
 		height: number
-		frameRate?: number
+		frameRate?: number,
+		alpha?: boolean
 	},
 	audio?: {
 		codec: string,
@@ -212,8 +213,9 @@ class WebMMuxer {
 				{ id: EBMLId.Video, data: [
 					{ id: EBMLId.PixelWidth, data: this.#options.video.width },
 					{ id: EBMLId.PixelHeight, data: this.#options.video.height },
+					(this.#options.video.alpha ? { id: EBMLId.AlphaMode, data: 1 } : null),
 					colourElement
-				] }
+				].filter(Boolean) }
 			].filter(Boolean) });
 		}
 		if (this.#options.audio) {

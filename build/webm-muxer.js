@@ -696,8 +696,9 @@ var WebMMuxer = (() => {
         { id: 224 /* Video */, data: [
           { id: 176 /* PixelWidth */, data: __privateGet(this, _options).video.width },
           { id: 186 /* PixelHeight */, data: __privateGet(this, _options).video.height },
+          __privateGet(this, _options).video.alpha ? { id: 21440 /* AlphaMode */, data: 1 } : null,
           colourElement
-        ] }
+        ].filter(Boolean) }
       ].filter(Boolean) });
     }
     if (__privateGet(this, _options).audio) {

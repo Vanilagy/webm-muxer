@@ -41,7 +41,11 @@ declare interface WebMMuxerOptions {
 		 * The frame rate of the video, in frames per second. This property is optional and usually used for metadata
 		 * only.
 		 */
-		frameRate?: number
+		frameRate?: number,
+		/**
+		 * Whether the video contains alpha data / transparency.
+		 */
+		alpha?: boolean
 	},
 
 	/**

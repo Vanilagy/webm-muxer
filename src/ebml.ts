@@ -73,7 +73,8 @@ export enum EBMLId {
 	MatrixCoefficients = 0x55b1,
 	TransferCharacteristics = 0x55ba,
 	Primaries = 0x55bb,
-	Range = 0x55b9
+	Range = 0x55b9,
+	AlphaMode = 0x53c0
 }
 
 export const measureUnsignedInt = (value: number) => {
