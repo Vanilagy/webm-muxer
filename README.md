@@ -82,7 +82,7 @@ interface WebMMuxerOptions {
         width: number,
         height: number,
         frameRate?: number, // Optional, adds metadata to the file
-        alpha?: boolean // Enable if the video contains transparency
+        alpha?: boolean // If the video contains transparency data
     },
 
     audio?: {
