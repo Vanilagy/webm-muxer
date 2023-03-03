@@ -215,8 +215,8 @@ class WebMMuxer {
 					{ id: EBMLId.PixelHeight, data: this.#options.video.height },
 					(this.#options.video.alpha ? { id: EBMLId.AlphaMode, data: 1 } : null),
 					colourElement
-				].filter(Boolean) }
-			].filter(Boolean) });
+				] }
+			] });
 		}
 		if (this.#options.audio) {
 			this.#audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
@@ -234,7 +234,7 @@ class WebMMuxer {
 						{ id: EBMLId.BitDepth, data: this.#options.audio.bitDepth } :
 						null
 					)
-				].filter(Boolean) }
+				] }
 			] });
 		}
 	}
@@ -538,10 +538,14 @@ class WebMMuxer {
 		// Add a CuePoint to the Cues element for better seeking
 		(this.#cues.data as EBML[]).push({ id: EBMLId.CuePoint, data: [
 			{ id: EBMLId.CueTime, data: timestamp },
-			{ id: EBMLId.CueTrackPositions, data: [
+			(this.#options.video ? { id: EBMLId.CueTrackPositions, data: [
 				{ id: EBMLId.CueTrack, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.CueClusterPosition, data: clusterOffsetFromSegment }
-			] }
+			] } : null),
+			(this.#options.audio ? { id: EBMLId.CueTrackPositions, data: [
+				{ id: EBMLId.CueTrack, data: AUDIO_TRACK_NUMBER },
+				{ id: EBMLId.CueClusterPosition, data: clusterOffsetFromSegment }
+			] } : null)
 		] });
 	}
 

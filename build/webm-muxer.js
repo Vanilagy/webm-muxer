@@ -162,6 +162,8 @@ var WebMMuxer = (() => {
     }
     writeEBML(data) {
       var _a, _b;
+      if (data === null)
+        return;
       if (data instanceof Uint8Array) {
         this.write(data);
       } else if (Array.isArray(data)) {
@@ -698,8 +700,8 @@ var WebMMuxer = (() => {
           { id: 186 /* PixelHeight */, data: __privateGet(this, _options).video.height },
           __privateGet(this, _options).video.alpha ? { id: 21440 /* AlphaMode */, data: 1 } : null,
           colourElement
-        ].filter(Boolean) }
-      ].filter(Boolean) });
+        ] }
+      ] });
     }
     if (__privateGet(this, _options).audio) {
       __privateSet(this, _audioCodecPrivate, { id: 236 /* Void */, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) });
@@ -713,7 +715,7 @@ var WebMMuxer = (() => {
           { id: 181 /* SamplingFrequency */, data: new EBMLFloat32(__privateGet(this, _options).audio.sampleRate) },
           { id: 159 /* Channels */, data: __privateGet(this, _options).audio.numberOfChannels },
           __privateGet(this, _options).audio.bitDepth ? { id: 25188 /* BitDepth */, data: __privateGet(this, _options).audio.bitDepth } : null
-        ].filter(Boolean) }
+        ] }
       ] });
     }
   };
@@ -895,10 +897,14 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
     let clusterOffsetFromSegment = __privateGet(this, _target).offsets.get(__privateGet(this, _currentCluster)) - __privateGet(this, _segmentDataOffset, segmentDataOffset_get);
     __privateGet(this, _cues).data.push({ id: 187 /* CuePoint */, data: [
       { id: 179 /* CueTime */, data: timestamp },
-      { id: 183 /* CueTrackPositions */, data: [
+      __privateGet(this, _options).video ? { id: 183 /* CueTrackPositions */, data: [
         { id: 247 /* CueTrack */, data: VIDEO_TRACK_NUMBER },
         { id: 241 /* CueClusterPosition */, data: clusterOffsetFromSegment }
-      ] }
+      ] } : null,
+      __privateGet(this, _options).audio ? { id: 183 /* CueTrackPositions */, data: [
+        { id: 247 /* CueTrack */, data: AUDIO_TRACK_NUMBER },
+        { id: 241 /* CueClusterPosition */, data: clusterOffsetFromSegment }
+      ] } : null
     ] });
   };
   _finalizeCurrentCluster = new WeakSet();

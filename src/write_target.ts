@@ -113,6 +113,8 @@ export abstract class WriteTarget {
 	}
 
 	writeEBML(data: EBML) {
+		if (data === null) return;
+
 		if (data instanceof Uint8Array) {
 			this.write(data);
 		} else if (Array.isArray(data)) {
