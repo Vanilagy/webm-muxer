@@ -329,6 +329,7 @@ class WebMMuxer {
 			prelude,
 			chunk.data
 		] };
+    console.log("write simple block", simpleBlock);
 		this.#target.writeEBML(simpleBlock);
 
 		this.#duration = Math.max(this.#duration, msTime);
@@ -336,11 +337,11 @@ class WebMMuxer {
 
 	/** Creates a new Cluster element to contain video and audio chunks. */
 	#createNewCluster(timestamp: number) {
-		if (this.#currentCluster) {
+		/*if (this.#currentCluster) {
 			this.#finalizeCurrentCluster();
-		}
+		}*/
 
-		this.#currentCluster = { id: EBMLId.Cluster, size: CLUSTER_SIZE_BYTES, data: [
+		this.#currentCluster = { id: EBMLId.Cluster, size: -1, data: [
 			{ id: EBMLId.Timestamp, data: timestamp }
 		] };
 		this.#target.writeEBML(this.#currentCluster);
@@ -364,7 +365,7 @@ class WebMMuxer {
 		while (this.#videoChunkQueue.length > 0) this.#writeSimpleBlock(this.#videoChunkQueue.shift());
 		while (this.#audioChunkQueue.length > 0) this.#writeSimpleBlock(this.#audioChunkQueue.shift());
 
-		this.#finalizeCurrentCluster();
+		// this.#finalizeCurrentCluster();
 
 		let endPos = this.#target.pos;
 

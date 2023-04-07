@@ -4,6 +4,8 @@ import { EBML, EBMLFloat32, EBMLFloat64, measureEBMLVarInt, measureUnsignedInt }
  * A WriteTarget defines a generic target to which data (bytes) can be written in a simple manner. It provides utility
  * methods for writing EBML-based data (the format Matroska or its subset, WebM, uses).
  */
+
+let lastPos = 0;
 export abstract class WriteTarget {
 	pos = 0;
 	#helper = new Uint8Array(8);
@@ -118,6 +120,8 @@ export abstract class WriteTarget {
 	}
 
 	writeEBML(data: EBML) {
+    lastPos = this.pos;
+
 		if (data === null) return;
 
 		if (data instanceof Uint8Array) {

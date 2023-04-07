@@ -106,6 +106,7 @@ var WebMMuxer = (() => {
   };
 
   // src/write_target.ts
+  var lastPos = 0;
   var _helper, _helperView, _writeByte, writeByte_fn, _writeFloat32, writeFloat32_fn, _writeFloat64, writeFloat64_fn, _writeUnsignedInt, writeUnsignedInt_fn, _writeString, writeString_fn;
   var WriteTarget = class {
     constructor() {
@@ -163,6 +164,7 @@ var WebMMuxer = (() => {
     }
     writeEBML(data) {
       var _a, _b;
+      lastPos = this.pos;
       if (data === null)
         return;
       if (data instanceof Uint8Array) {
@@ -550,7 +552,6 @@ var WebMMuxer = (() => {
         __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, __privateGet(this, _videoChunkQueue).shift());
       while (__privateGet(this, _audioChunkQueue).length > 0)
         __privateMethod(this, _writeSimpleBlock, writeSimpleBlock_fn).call(this, __privateGet(this, _audioChunkQueue).shift());
-      __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
       let endPos = __privateGet(this, _target).pos;
       __privateGet(this, _target).seek(endPos);
       __privateSet(this, _finalized, true);
@@ -718,15 +719,13 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
       prelude,
       chunk.data
     ] };
+    console.log("write simple block", simpleBlock);
     __privateGet(this, _target).writeEBML(simpleBlock);
     __privateSet(this, _duration, Math.max(__privateGet(this, _duration), msTime));
   };
   _createNewCluster = new WeakSet();
   createNewCluster_fn = function(timestamp) {
-    if (__privateGet(this, _currentCluster)) {
-      __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
-    }
-    __privateSet(this, _currentCluster, { id: 524531317 /* Cluster */, size: CLUSTER_SIZE_BYTES, data: [
+    __privateSet(this, _currentCluster, { id: 524531317 /* Cluster */, size: -1, data: [
       { id: 231 /* Timestamp */, data: timestamp }
     ] });
     __privateGet(this, _target).writeEBML(__privateGet(this, _currentCluster));

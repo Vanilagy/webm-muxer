@@ -1,5 +1,4 @@
-const canvas = document.querySelector('canvas');
-const ctx = canvas.getContext('2d', { desynchronized: true });
+const cam = document.querySelector('#cam');
 const startRecordingButton = document.querySelector('#start-recording');
 const endRecordingButton = document.querySelector('#end-recording');
 const recordingStatus = document.querySelector('#recording-status');
@@ -11,6 +10,7 @@ let videoEncoder = null;
 let audioEncoder = null;
 let startTime = null;
 let recording = false;
+let videoTrack = null;
 let audioTrack = null;
 let intervalId = null;
 let lastKeyFrame = null;
@@ -19,23 +19,23 @@ let buffer = [];
 
 const startRecording = async () => {
 	// Check for VideoEncoder availability
-	if (typeof VideoEncoder === 'undefined') {
-		alert("Looks like your user agent doesn't support VideoEncoder / WebCodecs API yet.");
-		return;
-	}
-
 	startRecordingButton.style.display = 'none';
 
 	// Check for AudioEncoder availability
-	if (typeof AudioEncoder !== 'undefined') {
+	if (typeof AudioEncoder !== 'undefined' && typeof VideoEncoder !== 'undefined') {
 		// Try to get access to the user's microphone
 		try {
-			let userMedia = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-			audioTrack = userMedia.getAudioTracks()[0];
+			let stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+			videoTrack = stream.getVideoTracks()[0];
+			audioTrack = stream.getAudioTracks()[0];
+      console.log(videoTrack, audioTrack);
+      cam.srcObject = stream;
+      cam.play();
 		} catch (e) {}
+		if (!videoTrack) console.warn("Couldn't acquire a user media video track.");
 		if (!audioTrack) console.warn("Couldn't acquire a user media audio track.");
 	} else {
-		console.warn("AudioEncoder not available; no need to acquire a user media audio track.");
+		alert("AudioEncoder or VideoEncoder not available");
 	}
 
 	endRecordingButton.style.display = 'block';
@@ -47,11 +47,14 @@ const startRecording = async () => {
 		// target: 'buffer',
     target: (data, offset, done) => {
       buffer.push(data);
+      if (done) {
+	      downloadBlob(new Blob(buffer));
+      }
     },
 		video: {
 			codec: 'V_VP9',
-			width: canvas.width,
-			height: canvas.height,
+			width: cam.width,
+			height: cam.height,
 			frameRate: 30
 		},
 		audio: audioTrack ? {
@@ -62,16 +65,32 @@ const startRecording = async () => {
 		firstTimestampBehavior: 'offset' // Because we're directly pumping a MediaStreamTrack's data into it
 	});
 
-	videoEncoder = new VideoEncoder({
-		output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-		error: e => console.error(e)
-	});
-	videoEncoder.configure({
-		codec: 'vp09.00.10.08',
-		width: canvas.width,
-		height: canvas.height,
-		bitrate: 1e6
-	});
+	if (videoTrack) {
+		videoEncoder = new VideoEncoder({
+			output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+			error: e => console.error(e)
+		});
+		videoEncoder.configure({
+      hardwareAcceleration: "prefer-software",
+      codec: 'vp09.00.10.08',
+      width: cam.width,
+      height: cam.height,
+      bitrate: 2_500_000,
+      framerate: 30,
+      latencyMode: "realtime",
+		});
+
+		// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track
+		let trackProcessor = new MediaStreamTrackProcessor({ track: videoTrack });
+		let consumer = new WritableStream({
+			write(videoData) {
+				if (!recording) return;
+				videoEncoder.encode(videoData);
+				videoData.close();
+			}
+		});
+		trackProcessor.readable.pipeTo(consumer);
+	}
 
 	if (audioTrack) {
 		audioEncoder = new AudioEncoder({
@@ -82,7 +101,7 @@ const startRecording = async () => {
 			codec: 'opus',
 			numberOfChannels: 1,
 			sampleRate: audioSampleRate,
-			bitrate: 64000,
+			bitrate: 128_000,
 		});
 
 		// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track
@@ -101,23 +120,12 @@ const startRecording = async () => {
 	recording = true;
 	lastKeyFrame = -Infinity;
 
-	encodeVideoFrame();
-	intervalId = setInterval(encodeVideoFrame, 1000/30);
+	intervalId = setInterval(timer, 1000/30);
 };
 startRecordingButton.addEventListener('click', startRecording);
 
-const encodeVideoFrame = () => {
+const timer = () => {
 	let elapsedTime = document.timeline.currentTime - startTime;
-	let frame = new VideoFrame(canvas, {
-		timestamp: elapsedTime * 1000
-	});
-
-	// Ensure a video key frame at least every 10 seconds
-	let needsKeyFrame = elapsedTime - lastKeyFrame >= 10000;
-	if (needsKeyFrame) lastKeyFrame = elapsedTime;
-
-	videoEncoder.encode(frame, { keyFrame: needsKeyFrame });
-	frame.close();
 
 	recordingStatus.textContent =
 		`${elapsedTime % 1000 < 500 ? '🔴' : '⚫'} Recording - ${(elapsedTime / 1000).toFixed(1)} s`;
@@ -135,7 +143,6 @@ const endRecording = async () => {
 	await audioEncoder.flush();
 	let _buffer = muxer.finalize();
 
-	downloadBlob(new Blob(buffer));
 
 	videoEncoder = null;
 	audioEncoder = null;
@@ -152,49 +159,8 @@ const downloadBlob = (blob) => {
 	let a = document.createElement('a');
 	a.style.display = 'none';
 	a.href = url;
-	a.download = 'picasso.webm';
+	a.download = 'cam.webm';
 	document.body.appendChild(a);
 	a.click();
 	window.URL.revokeObjectURL(url);
 };
-
-/** CANVAS DRAWING STUFF */
-
-ctx.fillStyle = 'white';
-ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-let drawing = false;
-let lastPos = { x: 0, y: 0 };
-
-const getRelativeMousePos = (e) => {
-	let rect = canvas.getBoundingClientRect();
-	return { x: e.clientX - rect.x, y: e.clientY - rect.y };
-};
-
-const drawLine = (from, to) => {
-	ctx.beginPath();
-	ctx.moveTo(from.x, from.y);
-	ctx.lineTo(to.x, to.y);
-	ctx.strokeStyle = 'black';
-	ctx.lineWidth = 3;
-	ctx.lineCap = 'round';
-	ctx.stroke();
-};
-
-canvas.addEventListener('pointerdown', (e) => {
-	if (e.button !== 0) return;
-
-	drawing = true;
-	lastPos = getRelativeMousePos(e);
-	drawLine(lastPos, lastPos);
-});
-window.addEventListener('pointerup', () => {
-	drawing = false;
-});
-window.addEventListener('mousemove', (e) => {
-	if (!drawing) return;
-
-	let newPos = getRelativeMousePos(e);
-	drawLine(lastPos, newPos);
-	lastPos = newPos;
-});
