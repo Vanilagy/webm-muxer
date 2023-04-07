@@ -15,6 +15,8 @@ let audioTrack = null;
 let intervalId = null;
 let lastKeyFrame = null;
 
+let buffer = [];
+
 const startRecording = async () => {
 	// Check for VideoEncoder availability
 	if (typeof VideoEncoder === 'undefined') {
@@ -42,7 +44,10 @@ const startRecording = async () => {
 
 	// Create a WebM muxer with a video track and maybe an audio track
 	muxer = new WebMMuxer({
-		target: 'buffer',
+		// target: 'buffer',
+    target: (data, offset, done) => {
+      buffer.push(data);
+    },
 		video: {
 			codec: 'V_VP9',
 			width: canvas.width,
@@ -128,9 +133,9 @@ const endRecording = async () => {
 
 	await videoEncoder.flush();
 	await audioEncoder.flush();
-	let buffer = muxer.finalize();
+	let _buffer = muxer.finalize();
 
-	downloadBlob(new Blob([buffer]));
+	downloadBlob(new Blob(buffer));
 
 	videoEncoder = null;
 	audioEncoder = null;
