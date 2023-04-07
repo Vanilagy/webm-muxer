@@ -22,6 +22,11 @@ export abstract class WriteTarget {
 	/** Sets the current position for future writes to a new one. */
 	abstract seek(newPos: number): void;
 
+  #writeByte(value: number) {
+    this.#helperView.setUint8(0, value);
+    this.write(this.#helper.subarray(0, 1));
+  }
+
 	#writeFloat32(value: number) {
 		this.#helperView.setFloat32(0, value, false);
 		this.write(this.#helper.subarray(0, 4));
@@ -128,19 +133,25 @@ export abstract class WriteTarget {
 
 			if (Array.isArray(data.data)) {
 				let sizePos = this.pos;
-				let sizeSize = data.size ?? 4;
+        let sizeSize = data.size === -1 ? 1 : data.size ?? 4;
 
-				this.seek(this.pos + sizeSize);
+        if (data.size === -1) {
+          this.#writeByte(0xff); // Write the reserved all-one-bits marker for unknown/unbounded size
+        } else {
+          this.seek(this.pos + sizeSize);
+        }
 
 				let startPos = this.pos;
 				this.dataOffsets.set(data, startPos);
 				this.writeEBML(data.data);
 
-				let size = this.pos - startPos;
-				let endPos = this.pos;
-				this.seek(sizePos);
-				this.writeEBMLVarInt(size, sizeSize);
-				this.seek(endPos);
+        if (data.size !== -1) {
+          let size = this.pos - startPos;
+          let endPos = this.pos;
+          this.seek(sizePos);
+          this.writeEBMLVarInt(size, sizeSize);
+          this.seek(endPos);
+        }
 			} else if (typeof data.data === 'number') {
 				let size = data.size ?? measureUnsignedInt(data.data);
 				this.writeEBMLVarInt(size);

@@ -122,11 +122,11 @@ class WebMMuxer {
 	#createFileHeader() {
 		this.#writeEBMLHeader();
 
-		this.#createSeekHead();
+		// this.#createSeekHead();
 		this.#createSegmentInfo();
 		this.#createTracks();
 		this.#createSegment();
-		this.#createCues();
+		// this.#createCues();
 
 		this.#maybeFlushStreamingTarget();
 	}
@@ -178,7 +178,7 @@ class WebMMuxer {
 			{ id: EBMLId.TimestampScale, data: 1e6 },
 			{ id: EBMLId.MuxingApp, data: APP_NAME },
 			{ id: EBMLId.WritingApp, data: APP_NAME },
-			segmentDuration
+			// segmentDuration
 		] };
 		this.#segmentInfo = segmentInfo;
 	}
@@ -205,11 +205,11 @@ class WebMMuxer {
 				{ id: EBMLId.TrackUID, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackType, data: VIDEO_TRACK_TYPE },
 				{ id: EBMLId.CodecID, data: this.#options.video.codec },
-				this.#videoCodecPrivate,
-				(this.#options.video.frameRate ?
+				// this.#videoCodecPrivate,
+				/*(this.#options.video.frameRate ?
 					{ id: EBMLId.DefaultDuration, data: 1e9/this.#options.video.frameRate } :
 					null
-				),
+				),*/
 				{ id: EBMLId.Video, data: [
 					{ id: EBMLId.PixelWidth, data: this.#options.video.width },
 					{ id: EBMLId.PixelHeight, data: this.#options.video.height },
@@ -226,7 +226,7 @@ class WebMMuxer {
 				{ id: EBMLId.TrackUID, data: AUDIO_TRACK_NUMBER },
 				{ id: EBMLId.TrackType, data: AUDIO_TRACK_TYPE },
 				{ id: EBMLId.CodecID, data: this.#options.audio.codec },
-				this.#audioCodecPrivate,
+				// this.#audioCodecPrivate,
 				{ id: EBMLId.Audio, data: [
 					{ id: EBMLId.SamplingFrequency, data: new EBMLFloat32(this.#options.audio.sampleRate) },
 					{ id: EBMLId.Channels, data: this.#options.audio.numberOfChannels},
@@ -240,8 +240,8 @@ class WebMMuxer {
 	}
 
 	#createSegment() {
-		let segment: EBML = { id: EBMLId.Segment, size: SEGMENT_SIZE_BYTES, data: [
-			this.#seekHead as EBML,
+		let segment: EBML = { id: EBMLId.Segment, size: -1, data: [
+			// this.#seekHead as EBML,
 			this.#segmentInfo,
 			this.#tracksElement
 		] };
@@ -276,7 +276,7 @@ class WebMMuxer {
 		if (!this.#options.video) throw new Error("No video track declared.");
 
 		if (this.#firstVideoTimestamp === undefined) this.#firstVideoTimestamp = timestamp;
-		if (meta) this.#writeVideoDecoderConfig(meta);
+		// if (meta) this.#writeVideoDecoderConfig(meta);
 
 		let internalChunk = this.#createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
 		if (this.#options.video.codec === 'V_VP9') this.#fixVP9ColorSpace(internalChunk);
@@ -413,9 +413,9 @@ class WebMMuxer {
 		}
 
 		// Write possible audio decoder metadata to the file
-		if (meta?.decoderConfig) {
+		/*if (meta?.decoderConfig) {
 			this.#writeCodecPrivate(this.#audioCodecPrivate, meta.decoderConfig.description);
-		}
+		}*/
 
 		this.#maybeFlushStreamingTarget();
 	}
@@ -566,22 +566,22 @@ class WebMMuxer {
 		while (this.#audioChunkQueue.length > 0) this.#writeSimpleBlock(this.#audioChunkQueue.shift());
 
 		this.#finalizeCurrentCluster();
-		this.#target.writeEBML(this.#cues);
+		// this.#target.writeEBML(this.#cues);
 
 		let endPos = this.#target.pos;
 
 		// Write the Segment size
-		let segmentSize = this.#target.pos - this.#segmentDataOffset;
+		/*let segmentSize = this.#target.pos - this.#segmentDataOffset;
 		this.#target.seek(this.#target.offsets.get(this.#segment) + 4);
-		this.#target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
+		this.#target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);*/
 
 		// Write the duration of the media to the Segment
-		this.#segmentDuration.data = new EBMLFloat64(this.#duration);
+		/*this.#segmentDuration.data = new EBMLFloat64(this.#duration);
 		this.#target.seek(this.#target.offsets.get(this.#segmentDuration));
-		this.#target.writeEBML(this.#segmentDuration);
+		this.#target.writeEBML(this.#segmentDuration);*/
 
 		// Fill in SeekHead position data and write it again
-		this.#seekHead.data[0].data[1].data =
+		/*this.#seekHead.data[0].data[1].data =
 			this.#target.offsets.get(this.#cues) - this.#segmentDataOffset;
 		this.#seekHead.data[1].data[1].data =
 			this.#target.offsets.get(this.#segmentInfo) - this.#segmentDataOffset;
@@ -589,7 +589,7 @@ class WebMMuxer {
 			this.#target.offsets.get(this.#tracksElement) - this.#segmentDataOffset;
 
 		this.#target.seek(this.#target.offsets.get(this.#seekHead));
-		this.#target.writeEBML(this.#seekHead);
+		this.#target.writeEBML(this.#seekHead);*/
 
 		this.#target.seek(endPos);
 		this.#finalized = true;
