@@ -196,10 +196,10 @@ class WebMMuxer {
 		if (this.#options.video) {
 			// For streaming, we wait for the first video to come in before writing the CodecPrivate element.
 			// For non-streaming we reserve 4 kiB for the CodecPrivate element and write it later.
-			this.#videoCodecPrivate = this.#options.streaming ? this.#videoCodecPrivate || null : 
+			this.#videoCodecPrivate = this.#options.streaming ? (this.#videoCodecPrivate || null) : 
 				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
 
-			this.#colourElement = this.#colourElement || 
+			let colourElement = this.#options.streaming ? this.#colourElement : 
 				{ id: EBMLId.Colour, data: [
 					// All initially unspecified
 					{ id: EBMLId.MatrixCoefficients, data: 2 },
@@ -208,8 +208,9 @@ class WebMMuxer {
 					{ id: EBMLId.Range, data: 0 }
 				]
 			};
+			this.#colourElement = colourElement;
 
-			this.#tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
+			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackType, data: VIDEO_TRACK_TYPE },
@@ -223,15 +224,15 @@ class WebMMuxer {
 					{ id: EBMLId.PixelWidth, data: this.#options.video.width },
 					{ id: EBMLId.PixelHeight, data: this.#options.video.height },
 					(this.#options.video.alpha ? { id: EBMLId.AlphaMode, data: 1 } : null),
-					this.#colourElement
+					colourElement
 				] }
 			] });
 		}
 		if (this.#options.audio) {
-			this.#audioCodecPrivate = this.#options.streaming ? this.#audioCodecPrivate || null :
+			this.#audioCodecPrivate = this.#options.streaming ? (this.#audioCodecPrivate || null) :
 				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
 
-			this.#tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
+			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: AUDIO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: AUDIO_TRACK_NUMBER },
 				{ id: EBMLId.TrackType, data: AUDIO_TRACK_TYPE },
