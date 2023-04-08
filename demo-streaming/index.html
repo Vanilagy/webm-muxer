@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+	<head>
+		<meta charset="UTF-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>WebM muxer streaming demo</title>
+		<link rel="stylesheet" href="./style.css">
+		<script src="../build/webm-muxer.js" defer></script>
+		<script src="./script.js" defer></script>
+	</head>
+	<body>
+		<main>
+			<h1>WebM muxer demo - record your camera and microphone!</h1>
+			<h2>Your camera and your microphone input will be recorded<br>and muxed into a WebM file.</h2>
+			<div id="controls">
+				<button id="start-recording">Start recording</button>
+				<button id="end-recording" style="display: none;">End recording</button>
+			</div>
+			<video id="cam-preview" width="640" height="360" muted></canvas>
+			<p id="recording-status"></p>
+		</main>
+	</body>
+</html>
