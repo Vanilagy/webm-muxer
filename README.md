@@ -178,6 +178,10 @@ set explicitly:
 starts at 0.
 - Use `'permissive'` to allow the first timestamp to be non-zero.
 
+#### `streaming` (optional) boolean
+Configures the muxer to only write data monotonically, useful for live-streaming the webm.
+When enabled, Segments and Clusters won't have a Size or Duration. Also we don't add a SeekHead.
+
 ### Muxing media chunks
 Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxer like so:
 ```js
