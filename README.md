@@ -165,7 +165,7 @@ This option specifies what will happens with the data created by the muxer. The 
         }
     });
     ```
-#### `streaming` (optional) boolean
+#### `streaming` (optional)
 Configures the muxer to only write data monotonically, useful for live-streaming the WebM as it's being muxed; intended
 to be used together with the `target` set to type `function`. When enabled, some features such as storing duration and
 seeking will be disabled or impacted, so don't use this option when you want to write out WebM file for later use.
