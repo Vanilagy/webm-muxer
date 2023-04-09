@@ -124,8 +124,8 @@ This option specifies what will happens with the data created by the muxer. The 
 - `function`: If the target is a function, it will be called each time data is output by the muxer - this is useful if
     you want to stream the data. The function will be called with three arguments: the data to write, the offset in
     bytes at which to write the data and a boolean indicating whether the muxer is done writing data. Note that the same
-    segment of bytes might be written to multiple times and therefore you need to write the data in the same order the
-    function gave it to you.
+    segment of bytes might be written to multiple times, and therefore you need to write the data in the same order the
+    function gave it to you. If you don't want this, set `streaming` to `true`.
 
     ```js
     let muxer = new WebMMuxer({
