@@ -6,9 +6,6 @@ import { EBML, EBMLFloat32, EBMLFloat64, measureEBMLVarInt, measureUnsignedInt }
  */
 export abstract class WriteTarget {
 	pos = 0;
-	#helper = new Uint8Array(8);
-	#helperView = new DataView(this.#helper.buffer);
-
 	/**
 	 * Stores the position from the start of the file to where EBML elements have been written. This is used to
 	 * rewrite/edit elements that were already added before, and to measure sizes of things.
@@ -16,11 +13,23 @@ export abstract class WriteTarget {
 	offsets = new WeakMap<EBML, number>();
 	/** Same as offsets, but stores position where the element's data starts (after ID and size fields). */
 	dataOffsets = new WeakMap<EBML, number>();
+	/** When set, throws an error if we try to seek backwards. */
+	enforceMonotonicity = false;
+
+	#helper = new Uint8Array(8);
+	#helperView = new DataView(this.#helper.buffer);
 
 	/** Writes the given data to the target, at the current position. */
 	abstract write(data: Uint8Array): void;
+
 	/** Sets the current position for future writes to a new one. */
-	abstract seek(newPos: number): void;
+	seek(newPos: number) {
+		if (this.enforceMonotonicity && newPos < this.pos) {
+			throw new Error("Internal error: Monotonicity violation.");
+		}
+
+		this.pos = newPos;
+	}
 
 	#writeByte(value: number) {
 		this.#helperView.setUint8(0, value);
@@ -133,7 +142,7 @@ export abstract class WriteTarget {
 
 			if (Array.isArray(data.data)) {
 				let sizePos = this.pos;
-				let sizeSize = data.size === -1 ? 1 : data.size ?? 4;
+				let sizeSize = data.size === -1 ? 1 : (data.size ?? 4);
 
 				if (data.size === -1) {
 					// Write the reserved all-one-bits marker for unknown/unbounded size.

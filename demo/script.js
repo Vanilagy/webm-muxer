@@ -126,8 +126,8 @@ const endRecording = async () => {
 	clearInterval(intervalId);
 	audioTrack?.stop();
 
-	await videoEncoder.flush();
-	await audioEncoder.flush();
+	await videoEncoder?.flush();
+	await audioEncoder?.flush();
 	let buffer = muxer.finalize();
 
 	downloadBlob(new Blob([buffer]));

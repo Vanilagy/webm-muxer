@@ -13,7 +13,6 @@ let recording = false;
 let audioTrack = null;
 let videoTrack = null;
 let intervalId = null;
-let lastKeyFrame = null;
 let buffers = [];
 
 const startRecording = async () => {
@@ -57,12 +56,12 @@ const startRecording = async () => {
 				downloadBlob(new Blob(buffers));
 			}
 		},
-		video: {
+		video: videoTrack ? {
 			codec: 'V_VP9',
 			width: videoTrackWidth,
 			height: videoTrackHeight,
 			frameRate: 30
-		},
+		} : undefined,
 		audio: audioTrack ? {
 			codec: 'A_OPUS',
 			sampleRate: audioSampleRate,
@@ -72,59 +71,62 @@ const startRecording = async () => {
 	});
 
 	// Audio track
-	audioEncoder = new AudioEncoder({
-		output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-		error: e => console.error(e)
-	});
-	audioEncoder.configure({
-		codec: 'opus',
-		numberOfChannels: 1,
-		sampleRate: audioSampleRate,
-		bitrate: 64000,
-	});
+	if (audioTrack) {
+		audioEncoder = new AudioEncoder({
+			output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+			error: e => console.error(e)
+		});
+		audioEncoder.configure({
+			codec: 'opus',
+			numberOfChannels: 1,
+			sampleRate: audioSampleRate,
+			bitrate: 64000,
+		});
 
-	// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track
-	let trackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
-	let consumer = new WritableStream({
-		write(audioData) {
-			if (!recording) return;
-			audioEncoder.encode(audioData);
-			audioData.close();
-		}
-	});
-	trackProcessor.readable.pipeTo(consumer);
+		// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track
+		let trackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
+		let consumer = new WritableStream({
+			write(audioData) {
+				if (!recording) return;
+				audioEncoder.encode(audioData);
+				audioData.close();
+			}
+		});
+		trackProcessor.readable.pipeTo(consumer);
+	}
 
 	// Video track
-	videoEncoder = new VideoEncoder({
-		output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-		error: e => console.error(e)
-	});
-	videoEncoder.configure({
-		codec: 'vp09.00.10.08',
-		width: videoTrackWidth,
-		height: videoTrackHeight,
-		bitrate: 1e6
-	});
+	if (videoTrack) {
+		videoEncoder = new VideoEncoder({
+			output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+			error: e => console.error(e)
+		});
+		videoEncoder.configure({
+			codec: 'vp09.00.10.08',
+			width: videoTrackWidth,
+			height: videoTrackHeight,
+			bitrate: 1e6
+		});
 
-	// Create a MediaStreamTrackProcessor to get VideoData chunks from the video track
-	let frameCount = 0;
-	const keyframeInterval = 3;
-	let videoTrackProcessor = new MediaStreamTrackProcessor({ track: videoTrack });
-	let videoConsumer = new WritableStream({
-		write(videoData) {
-			if (!recording) return;
-			const isKeyframe = frameCount % keyframeInterval === 0;
-			videoEncoder.encode(videoData, { keyFrame: isKeyframe });
-			videoData.close();
+		// Create a MediaStreamTrackProcessor to get VideoFrame chunks from the video track
+		let frameCount = 0;
+		const keyframeInterval = 3;
+		let videoTrackProcessor = new MediaStreamTrackProcessor({ track: videoTrack });
+		let videoConsumer = new WritableStream({
+			write(videoFrame) {
+				if (!recording) return;
+				const isKeyframe = frameCount % keyframeInterval === 0;
+				videoEncoder.encode(videoFrame, { keyFrame: isKeyframe });
+				videoFrame.close();
 
-			frameCount++;
-		}
-	});
-	videoTrackProcessor.readable.pipeTo(videoConsumer);
+				frameCount++;
+			}
+		});
+		videoTrackProcessor.readable.pipeTo(videoConsumer);
+	}
 
 	startTime = document.timeline.currentTime;
 	recording = true;
-	lastKeyFrame = -Infinity;
 
 	intervalId = setInterval(recordingTimer, 1000/30);
 };
@@ -146,8 +148,8 @@ const endRecording = async () => {
 	audioTrack?.stop();
 	videoTrack?.stop();
 
-	await videoEncoder.flush();
-	await audioEncoder.flush();
+	await videoEncoder?.flush();
+	await audioEncoder?.flush();
 	muxer.finalize();
 
 	videoEncoder = null;

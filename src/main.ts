@@ -47,27 +47,29 @@ interface InternalMediaChunk {
 	trackNumber: number
 }
 
+interface SeekHead {
+	id: number,
+	data: {
+		id: number,
+		data: ({
+			id: number,
+			data: Uint8Array,
+			size?: undefined
+		} | {
+			id: number,
+			size: number,
+			data: number
+		})[]
+	}[]
+}
+
 class WebMMuxer {
 	#target: WriteTarget;
 	#options: WebMMuxerOptions;
 
 	#segment: EBMLElement;
 	#segmentInfo: EBMLElement;
-	#seekHead: {
-		id: number,
-		data: {
-			id: number,
-			data: ({
-				id: number,
-				data: Uint8Array,
-				size?: undefined
-			} | {
-				id: number,
-				size: number,
-				data: number
-			})[]
-		}[]
-	};
+	#seekHead: SeekHead;
 	#tracksElement: EBMLElement;
 	#segmentDuration: EBMLElement;
 	#colourElement: EBMLElement;
@@ -107,6 +109,8 @@ class WebMMuxer {
 			throw new Error(`Invalid target: ${options.target}`);
 		}
 
+		if (options.streaming) this.#target.enforceMonotonicity = true;
+
 		this.#createFileHeader();
 	}
 
@@ -126,12 +130,18 @@ class WebMMuxer {
 		if (!this.#options.streaming) {
 			this.#createSeekHead();
 		}
+
 		this.#createSegmentInfo();
+		this.#createCodecPrivatePlaceholders();
+		this.#createColourElement();
 
 		if (!this.#options.streaming) {
 			this.#createTracks();
 			this.#createSegment();
+		} else {
+			// We'll create these once we write out media chunks
 		}
+
 		this.#createCues();
 
 		this.#maybeFlushStreamingTarget();
@@ -148,6 +158,22 @@ class WebMMuxer {
 			{ id: EBMLId.DocTypeReadVersion, data: 2 }
 		] };
 		this.#target.writeEBML(ebmlHeader);
+	}
+
+	/** Reserve 4 kiB for the CodecPrivate elements so we can write them later. */
+	#createCodecPrivatePlaceholders() {
+		this.#videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+		this.#audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+	}
+
+	#createColourElement() {
+		this.#colourElement = { id: EBMLId.Colour, data: [
+			// All initially unspecified
+			{ id: EBMLId.MatrixCoefficients, data: 2 },
+			{ id: EBMLId.TransferCharacteristics, data: 2 },
+			{ id: EBMLId.Primaries, data: 2 },
+			{ id: EBMLId.Range, data: 0 }
+		] };
 	}
 
 	/**
@@ -194,22 +220,6 @@ class WebMMuxer {
 		this.#tracksElement = tracksElement;
 
 		if (this.#options.video) {
-			// For streaming, we wait for the first video to come in before writing the CodecPrivate element.
-			// For non-streaming we reserve 4 kiB for the CodecPrivate element and write it later.
-			this.#videoCodecPrivate = this.#options.streaming ? (this.#videoCodecPrivate || null) : 
-				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
-
-			let colourElement = this.#options.streaming ? this.#colourElement : 
-				{ id: EBMLId.Colour, data: [
-					// All initially unspecified
-					{ id: EBMLId.MatrixCoefficients, data: 2 },
-					{ id: EBMLId.TransferCharacteristics, data: 2 },
-					{ id: EBMLId.Primaries, data: 2 },
-					{ id: EBMLId.Range, data: 0 }
-				]
-			};
-			this.#colourElement = colourElement;
-
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: VIDEO_TRACK_NUMBER },
@@ -224,10 +234,11 @@ class WebMMuxer {
 					{ id: EBMLId.PixelWidth, data: this.#options.video.width },
 					{ id: EBMLId.PixelHeight, data: this.#options.video.height },
 					(this.#options.video.alpha ? { id: EBMLId.AlphaMode, data: 1 } : null),
-					colourElement
+					this.#colourElement
 				] }
 			] });
 		}
+
 		if (this.#options.audio) {
 			this.#audioCodecPrivate = this.#options.streaming ? (this.#audioCodecPrivate || null) :
 				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
@@ -323,47 +334,47 @@ class WebMMuxer {
 		this.#maybeFlushStreamingTarget();
 	}
 
+	/** Writes possible video decoder metadata to the file. */
 	#writeVideoDecoderConfig(meta: EncodedVideoChunkMetadata) {
-		// Write possible video decoder metadata to the file
-		if (meta.decoderConfig) {
-			if (meta.decoderConfig.colorSpace) {
-				let colorSpace = meta.decoderConfig.colorSpace;
-				this.#colorSpace = colorSpace;
+		if (!meta.decoderConfig) return;
 
-				this.#colourElement = { id: EBMLId.Colour, data: [
-					{ id: EBMLId.MatrixCoefficients, data: {
-						'rgb': 1,
-						'bt709': 1,
-						'bt470bg': 5,
-						'smpte170m': 6
-					}[colorSpace.matrix] },
-					{ id: EBMLId.TransferCharacteristics, data: {
-						'bt709': 1,
-						'smpte170m': 6,
-						'iec61966-2-1': 13
-					}[colorSpace.transfer] },
-					{ id: EBMLId.Primaries, data: {
-						'bt709': 1,
-						'bt470bg': 5,
-						'smpte170m': 6
-					}[colorSpace.primaries] },
-					{ id: EBMLId.Range, data: [1, 2][Number(colorSpace.fullRange)] }
-				]};
+		if (meta.decoderConfig.colorSpace) {
+			let colorSpace = meta.decoderConfig.colorSpace;
+			this.#colorSpace = colorSpace;
 
-				if (!this.#options.streaming) {
-					let endPos = this.#target.pos;
-					this.#target.seek(this.#target.offsets.get(this.#colourElement));
-					this.#target.writeEBML(this.#colourElement);
-					this.#target.seek(endPos);
-				}
+			this.#colourElement.data = [
+				{ id: EBMLId.MatrixCoefficients, data: {
+					'rgb': 1,
+					'bt709': 1,
+					'bt470bg': 5,
+					'smpte170m': 6
+				}[colorSpace.matrix] },
+				{ id: EBMLId.TransferCharacteristics, data: {
+					'bt709': 1,
+					'smpte170m': 6,
+					'iec61966-2-1': 13
+				}[colorSpace.transfer] },
+				{ id: EBMLId.Primaries, data: {
+					'bt709': 1,
+					'bt470bg': 5,
+					'smpte170m': 6
+				}[colorSpace.primaries] },
+				{ id: EBMLId.Range, data: [1, 2][Number(colorSpace.fullRange)] }
+			];
+
+			if (!this.#options.streaming) {
+				let endPos = this.#target.pos;
+				this.#target.seek(this.#target.offsets.get(this.#colourElement));
+				this.#target.writeEBML(this.#colourElement);
+				this.#target.seek(endPos);
 			}
+		}
 
-			if (meta.decoderConfig.description) {
-				if (this.#options.streaming) {
-					this.#videoCodecPrivate = this.#getCodecPrivateElement(meta.decoderConfig.description);
-				} else {
-					this.#writeCodecPrivate(this.#videoCodecPrivate, meta.decoderConfig.description);
-				}
+		if (meta.decoderConfig.description) {
+			if (this.#options.streaming) {
+				this.#videoCodecPrivate = this.#createCodecPrivateElement(meta.decoderConfig.description);
+			} else {
+				this.#writeCodecPrivate(this.#videoCodecPrivate, meta.decoderConfig.description);
 			}
 		}
 	}
@@ -420,7 +431,7 @@ class WebMMuxer {
 		// Write possible audio decoder metadata to the file
 		if (meta?.decoderConfig) {
 			if (this.#options.streaming) {
-				this.#audioCodecPrivate = this.#getCodecPrivateElement(meta.decoderConfig.description)
+				this.#audioCodecPrivate = this.#createCodecPrivateElement(meta.decoderConfig.description);
 			} else {
 				this.#writeCodecPrivate(this.#audioCodecPrivate, meta.decoderConfig.description);
 			}
@@ -428,7 +439,7 @@ class WebMMuxer {
 
 		let internalChunk = this.#createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
 
-		// Algorithm explained in `addVideoChunk`
+		// Algorithm explained in `addVideoChunkRaw`
 		this.#lastAudioTimestamp = internalChunk.timestamp;
 
 		while (this.#videoChunkQueue.length > 0 && this.#videoChunkQueue[0].timestamp <= internalChunk.timestamp) {
@@ -488,14 +499,11 @@ class WebMMuxer {
 
 	/** Writes an EBML SimpleBlock containing video or audio data to the file. */
 	#writeSimpleBlock(chunk: InternalMediaChunk) {
-		// When streaming we create the tracks and segment after we've received the first video and audio.
-		if (this.#options.streaming) {
-			if (!this.#tracksElement && this.#firstVideoTimestamp !== undefined && this.#firstAudioTimestamp !== undefined) {
-				this.#createTracks();
-			}
-			if (!this.#segment && this.#tracksElement) {
-				this.#createSegment();
-			}
+		// When streaming, we create the tracks and segment after we've received the first media chunks.
+		// Due to the interlacing algorithm, this code will be run once we've seen one chunk from every media track.
+		if (this.#options.streaming && !this.#tracksElement) {
+			this.#createTracks();
+			this.#createSegment();
 		}
 
 		let msTime = Math.floor(chunk.timestamp / 1000);
@@ -537,8 +545,8 @@ class WebMMuxer {
 		this.#duration = Math.max(this.#duration, msTime);
 	}
 
-	#getCodecPrivateElement(data: AllowSharedBufferSource) {
-		return { id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) }
+	#createCodecPrivateElement(data: AllowSharedBufferSource) {
+		return { id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) };
 	}
 
 	/**
@@ -550,7 +558,7 @@ class WebMMuxer {
 		this.#target.seek(this.#target.offsets.get(element));
 
 		element = [
-			this.#getCodecPrivateElement(data),
+			this.#createCodecPrivateElement(data),
 			{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
 		];
 
@@ -564,7 +572,7 @@ class WebMMuxer {
 			this.#finalizeCurrentCluster();
 		}
 
-		this.#currentCluster = { 
+		this.#currentCluster = {
 			id: EBMLId.Cluster,
 			size: this.#options.streaming ? -1 : CLUSTER_SIZE_BYTES,
 			data: [
@@ -613,9 +621,9 @@ class WebMMuxer {
 		}
 		this.#target.writeEBML(this.#cues);
 
-		let endPos = this.#target.pos;
-
 		if (!this.#options.streaming) {
+			let endPos = this.#target.pos;
+
 			// Write the Segment size
 			let segmentSize = this.#target.pos - this.#segmentDataOffset;
 			this.#target.seek(this.#target.offsets.get(this.#segment) + 4);
@@ -636,9 +644,10 @@ class WebMMuxer {
 
 			this.#target.seek(this.#target.offsets.get(this.#seekHead));
 			this.#target.writeEBML(this.#seekHead);
+
+			this.#target.seek(endPos);
 		}
 
-		this.#target.seek(endPos);
 		this.#finalized = true;
 
 		if (this.#target instanceof ArrayBufferWriteTarget) {
