@@ -5,9 +5,11 @@
 
 The WebCodecs API provides low-level access to media codecs, but provides no way of actually packaging (multiplexing)
 the encoded media into a playable file. This project implements a WebM/Matroska multiplexer in pure TypeScript, which is
-high-quality, fast and tiny, and supports both video and audio.
+high-quality, fast and tiny, and supports both video and audio as well as live-streaming.
 
-[Demo](https://vanilagy.github.io/webm-muxer/demo/)
+[Demo: Muxing into a file](https://vanilagy.github.io/webm-muxer/demo/)
+
+[Demo: Streaming](https://vanilagy.github.io/webm-muxer/demo-streaming/)
 
 ## Quick start
 The following is an example for a common usage of this library:
@@ -92,6 +94,8 @@ interface WebMMuxerOptions {
         bitDepth?: number // Mainly necessary for PCM-coded audio
     },
 
+    streaming?: boolean,
+
     type?: 'webm' | 'matroska',
 
     firstTimestampBehavior?: 'strict' | 'offset' | 'permissive'
@@ -161,6 +165,10 @@ This option specifies what will happens with the data created by the muxer. The 
         }
     });
     ```
+#### `streaming` (optional) boolean
+Configures the muxer to only write data monotonically, useful for live-streaming the WebM as it's being muxed; intended
+to be used together with the `target` set to type `function`. When enabled, some features such as storing duration and
+seeking will be disabled or impacted, so don't use this option when you want to write out WebM file for later use.
 #### `type` (optional)
 As WebM is a subset of the more general Matroska multimedia container format, this library muxes both WebM and Matroska
 files. WebM, according to the official specification, supports only a small subset of the codecs supported by Matroska.
@@ -177,10 +185,6 @@ set explicitly:
 - Use `'offset'` to offset the timestamp of each video track by that track's first chunk's timestamp. This way, it
 starts at 0.
 - Use `'permissive'` to allow the first timestamp to be non-zero.
-
-#### `streaming` (optional) boolean
-Configures the muxer to only write data monotonically, useful for live-streaming the webm.
-When enabled, Segments and Clusters won't have a Size or Duration. Also we don't add a SeekHead.
 
 ### Muxing media chunks
 Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxer like so:
