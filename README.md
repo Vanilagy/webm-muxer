@@ -44,8 +44,9 @@ let buffer = muxer.finalize(); // Buffer contains final WebM file
 
 ## Motivation
 This library was created to power the in-game video renderer of the browser game
-[Marble Blast Web](https://github.com/vanilagy/marbleblast) - [here](https://www.youtube.com/watch?v=ByCcAIoXsKY) you can find a video completely rendered by it and muxed with this library. Previous efforts at in-browser WebM muxing, such as
-[webm-writer-js](https://github.com/thenickdude/webm-writer-js) or
+[Marble Blast Web](https://github.com/vanilagy/marbleblast) - [here](https://www.youtube.com/watch?v=ByCcAIoXsKY) you
+can find a video completely rendered by it and muxed with this library. Previous efforts at in-browser WebM muxing,
+such as [webm-writer-js](https://github.com/thenickdude/webm-writer-js) or
 [webm-muxer.js](https://github.com/davedoesdev/webm-muxer.js), were either lacking in functionality or were way too
 heavy in terms of byte size, which prompted the creation of this library.
 
@@ -139,7 +140,9 @@ This option specifies what will happens with the data created by the muxer. The 
     });
     ```
 - `FileSystemWritableFileStream`: When acquired through the File System Access API, the
-    muxed file is written directly to disk, allowing for files way larger than what would fit in RAM. This functionality could also be manually emulated by passing a `function` instead, however, this library has some built-in write batching optimization which will be used when passing a FileSystemWritableFileStream.
+    muxed file is written directly to disk, allowing for files way larger than what would fit in RAM. This functionality
+    could also be manually emulated by passing a `function` instead, however, this library has some built-in write
+    batching optimization which will be used when passing a FileSystemWritableFileStream.
 
     ```js
     let fileHandle = await window.showSaveFilePicker({
@@ -263,5 +266,6 @@ create the Matroska elements needed to form a WebM file. Many thanks to
 [webm-writer-js](https://github.com/thenickdude/webm-writer-js) for being the inspiration for most of the core EBML
 writing code.
 
-For development, clone this repository, install everything with `npm i`, then run `npm run watch` to bundle the code
-into the `build` directory.
+For development, clone this repository, install everything with `npm install`, then run `npm run watch` to bundle the
+code into the `build` directory. Run `npm run check` to run the TypeScript type checker, and `npm run lint` to run
+ESLint.

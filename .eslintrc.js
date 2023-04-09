@@ -22,7 +22,7 @@ module.exports = {
 		"@typescript-eslint/no-explicit-any": ["off"],
 		"indent": ["error", "tab", { "SwitchCase": 1, "flatTernaryExpressions": true }],
 		"no-useless-escape": ["off"],
-		"semi": ["error", "always"],
+		"@typescript-eslint/semi": ["error", "always"],
 		"@typescript-eslint/no-empty-function": ["off"],
 		"no-constant-condition": ["error", { "checkLoops": false }],
 		"no-cond-assign": ["off"],
@@ -35,6 +35,7 @@ module.exports = {
 		"no-warning-comments": ["warn", { "terms": ["todo", "fixme", "temp"] }],
 		"no-fallthrough": ["off"],
 		"max-len": ["warn", { "code": 120, "tabWidth": 4 }],
-		"no-undef": ["off"]
+		"no-undef": ["off"],
+		"@typescript-eslint/comma-dangle": ["warn"]
 	}
 };

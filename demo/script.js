@@ -77,7 +77,7 @@ const startRecording = async () => {
 			codec: 'opus',
 			numberOfChannels: 1,
 			sampleRate: audioSampleRate,
-			bitrate: 64000,
+			bitrate: 64000
 		});
 
 		// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track

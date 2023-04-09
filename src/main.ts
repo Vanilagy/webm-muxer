@@ -37,7 +37,7 @@ interface WebMMuxerOptions {
 	},
 	type?: 'webm' | 'matroska',
 	firstTimestampBehavior?: typeof FIRST_TIMESTAMP_BEHAVIORS[number],
-	streaming?: boolean,
+	streaming?: boolean
 }
 
 interface InternalMediaChunk {

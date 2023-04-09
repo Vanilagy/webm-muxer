@@ -6,7 +6,8 @@
   "types": "./build/webm-muxer.d.ts",
   "scripts": {
     "watch": "node build.js",
-    "check": "npx tsc --noEmit --skipLibCheck"
+    "check": "npx tsc --noEmit --skipLibCheck",
+    "lint": "npx eslint src demo build"
   },
   "repository": {
     "type": "git",
