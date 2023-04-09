@@ -36,7 +36,8 @@ interface WebMMuxerOptions {
 		bitDepth?: number
 	},
 	type?: 'webm' | 'matroska',
-	firstTimestampBehavior?: typeof FIRST_TIMESTAMP_BEHAVIORS[number]
+	firstTimestampBehavior?: typeof FIRST_TIMESTAMP_BEHAVIORS[number],
+	streaming?: boolean,
 }
 
 interface InternalMediaChunk {
@@ -122,10 +123,15 @@ class WebMMuxer {
 	#createFileHeader() {
 		this.#writeEBMLHeader();
 
-		this.#createSeekHead();
+		if (!this.#options.streaming) {
+			this.#createSeekHead();
+		}
 		this.#createSegmentInfo();
-		this.#createTracks();
-		this.#createSegment();
+
+		if (!this.#options.streaming) {
+			this.#createTracks();
+			this.#createSegment();
+		}
 		this.#createCues();
 
 		this.#maybeFlushStreamingTarget();
@@ -178,7 +184,7 @@ class WebMMuxer {
 			{ id: EBMLId.TimestampScale, data: 1e6 },
 			{ id: EBMLId.MuxingApp, data: APP_NAME },
 			{ id: EBMLId.WritingApp, data: APP_NAME },
-			segmentDuration
+			!this.#options.streaming ? segmentDuration : null
 		] };
 		this.#segmentInfo = segmentInfo;
 	}
@@ -188,16 +194,20 @@ class WebMMuxer {
 		this.#tracksElement = tracksElement;
 
 		if (this.#options.video) {
-			// Reserve 4 kiB for the CodecPrivate element
-			this.#videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+			// For streaming, we wait for the first video to come in before writing the CodecPrivate element.
+			// For non-streaming we reserve 4 kiB for the CodecPrivate element and write it later.
+			this.#videoCodecPrivate = this.#options.streaming ? (this.#videoCodecPrivate || null) : 
+				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
 
-			let colourElement = { id: EBMLId.Colour, data: [
-				// All initially unspecified
-				{ id: EBMLId.MatrixCoefficients, data: 2 },
-				{ id: EBMLId.TransferCharacteristics, data: 2 },
-				{ id: EBMLId.Primaries, data: 2 },
-				{ id: EBMLId.Range, data: 0 }
-			] };
+			let colourElement = this.#options.streaming ? this.#colourElement : 
+				{ id: EBMLId.Colour, data: [
+					// All initially unspecified
+					{ id: EBMLId.MatrixCoefficients, data: 2 },
+					{ id: EBMLId.TransferCharacteristics, data: 2 },
+					{ id: EBMLId.Primaries, data: 2 },
+					{ id: EBMLId.Range, data: 0 }
+				]
+			};
 			this.#colourElement = colourElement;
 
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
@@ -219,7 +229,8 @@ class WebMMuxer {
 			] });
 		}
 		if (this.#options.audio) {
-			this.#audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+			this.#audioCodecPrivate = this.#options.streaming ? (this.#audioCodecPrivate || null) :
+				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
 
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: AUDIO_TRACK_NUMBER },
@@ -240,11 +251,15 @@ class WebMMuxer {
 	}
 
 	#createSegment() {
-		let segment: EBML = { id: EBMLId.Segment, size: SEGMENT_SIZE_BYTES, data: [
-			this.#seekHead as EBML,
-			this.#segmentInfo,
-			this.#tracksElement
-		] };
+		let segment: EBML = {
+			id: EBMLId.Segment,
+			size: this.#options.streaming ? -1 : SEGMENT_SIZE_BYTES,
+			data: [
+				!this.#options.streaming ? this.#seekHead as EBML : null,
+				this.#segmentInfo,
+				this.#tracksElement
+			]
+		};
 		this.#segment = segment;
 
 		this.#target.writeEBML(segment);
@@ -315,7 +330,7 @@ class WebMMuxer {
 				let colorSpace = meta.decoderConfig.colorSpace;
 				this.#colorSpace = colorSpace;
 
-				this.#colourElement.data = [
+				this.#colourElement = { id: EBMLId.Colour, data: [
 					{ id: EBMLId.MatrixCoefficients, data: {
 						'rgb': 1,
 						'bt709': 1,
@@ -333,16 +348,22 @@ class WebMMuxer {
 						'smpte170m': 6
 					}[colorSpace.primaries] },
 					{ id: EBMLId.Range, data: [1, 2][Number(colorSpace.fullRange)] }
-				];
+				]};
 
-				let endPos = this.#target.pos;
-				this.#target.seek(this.#target.offsets.get(this.#colourElement));
-				this.#target.writeEBML(this.#colourElement);
-				this.#target.seek(endPos);
+				if (!this.#options.streaming) {
+					let endPos = this.#target.pos;
+					this.#target.seek(this.#target.offsets.get(this.#colourElement));
+					this.#target.writeEBML(this.#colourElement);
+					this.#target.seek(endPos);
+				}
 			}
 
 			if (meta.decoderConfig.description) {
-				this.#writeCodecPrivate(this.#videoCodecPrivate, meta.decoderConfig.description);
+				if (this.#options.streaming) {
+					this.#videoCodecPrivate = this.#getCodecPrivateElement(meta.decoderConfig.description);
+				} else {
+					this.#writeCodecPrivate(this.#videoCodecPrivate, meta.decoderConfig.description);
+				}
 			}
 		}
 	}
@@ -396,6 +417,15 @@ class WebMMuxer {
 
 		if (this.#firstAudioTimestamp === undefined) this.#firstAudioTimestamp = timestamp;
 
+		// Write possible audio decoder metadata to the file
+		if (meta?.decoderConfig) {
+			if (this.#options.streaming) {
+				this.#audioCodecPrivate = this.#getCodecPrivateElement(meta.decoderConfig.description)
+			} else {
+				this.#writeCodecPrivate(this.#audioCodecPrivate, meta.decoderConfig.description);
+			}
+		}
+
 		let internalChunk = this.#createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
 
 		// Algorithm explained in `addVideoChunk`
@@ -410,11 +440,6 @@ class WebMMuxer {
 			this.#writeSimpleBlock(internalChunk);
 		} else {
 			this.#audioChunkQueue.push(internalChunk);
-		}
-
-		// Write possible audio decoder metadata to the file
-		if (meta?.decoderConfig) {
-			this.#writeCodecPrivate(this.#audioCodecPrivate, meta.decoderConfig.description);
 		}
 
 		this.#maybeFlushStreamingTarget();
@@ -463,6 +488,16 @@ class WebMMuxer {
 
 	/** Writes an EBML SimpleBlock containing video or audio data to the file. */
 	#writeSimpleBlock(chunk: InternalMediaChunk) {
+		// When streaming we create the tracks and segment after we've received the first video and audio.
+		if (this.#options.streaming) {
+			if (!this.#tracksElement && this.#firstVideoTimestamp !== undefined && this.#firstAudioTimestamp !== undefined) {
+				this.#createTracks();
+			}
+			if (!this.#segment && this.#tracksElement) {
+				this.#createSegment();
+			}
+		}
+
 		let msTime = Math.floor(chunk.timestamp / 1000);
 		let clusterIsTooLong = chunk.type !== 'key' && msTime - this.#currentClusterTimestamp >= MAX_CHUNK_LENGTH_MS;
 
@@ -502,6 +537,10 @@ class WebMMuxer {
 		this.#duration = Math.max(this.#duration, msTime);
 	}
 
+	#getCodecPrivateElement(data: AllowSharedBufferSource) {
+		return { id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) }
+	}
+
 	/**
 	 * Replaces a placeholder EBML element with actual CodecPrivate data, then pads it with a Void Element of
 	 * necessary size.
@@ -511,7 +550,7 @@ class WebMMuxer {
 		this.#target.seek(this.#target.offsets.get(element));
 
 		element = [
-			{ id: EBMLId.CodecPrivate, size: 4, data: new Uint8Array(data as ArrayBuffer) },
+			this.#getCodecPrivateElement(data),
 			{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
 		];
 
@@ -521,13 +560,17 @@ class WebMMuxer {
 
 	/** Creates a new Cluster element to contain video and audio chunks. */
 	#createNewCluster(timestamp: number) {
-		if (this.#currentCluster) {
+		if (this.#currentCluster && !this.#options.streaming) {
 			this.#finalizeCurrentCluster();
 		}
 
-		this.#currentCluster = { id: EBMLId.Cluster, size: CLUSTER_SIZE_BYTES, data: [
-			{ id: EBMLId.Timestamp, data: timestamp }
-		] };
+		this.#currentCluster = { 
+			id: EBMLId.Cluster,
+			size: this.#options.streaming ? -1 : CLUSTER_SIZE_BYTES,
+			data: [
+				{ id: EBMLId.Timestamp, data: timestamp }
+			]
+		};
 		this.#target.writeEBML(this.#currentCluster);
 
 		this.#currentClusterTimestamp = timestamp;
@@ -565,31 +608,35 @@ class WebMMuxer {
 		while (this.#videoChunkQueue.length > 0) this.#writeSimpleBlock(this.#videoChunkQueue.shift());
 		while (this.#audioChunkQueue.length > 0) this.#writeSimpleBlock(this.#audioChunkQueue.shift());
 
-		this.#finalizeCurrentCluster();
+		if (!this.#options.streaming) {
+			this.#finalizeCurrentCluster();
+		}
 		this.#target.writeEBML(this.#cues);
 
 		let endPos = this.#target.pos;
 
-		// Write the Segment size
-		let segmentSize = this.#target.pos - this.#segmentDataOffset;
-		this.#target.seek(this.#target.offsets.get(this.#segment) + 4);
-		this.#target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
+		if (!this.#options.streaming) {
+			// Write the Segment size
+			let segmentSize = this.#target.pos - this.#segmentDataOffset;
+			this.#target.seek(this.#target.offsets.get(this.#segment) + 4);
+			this.#target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
 
-		// Write the duration of the media to the Segment
-		this.#segmentDuration.data = new EBMLFloat64(this.#duration);
-		this.#target.seek(this.#target.offsets.get(this.#segmentDuration));
-		this.#target.writeEBML(this.#segmentDuration);
+			// Write the duration of the media to the Segment
+			this.#segmentDuration.data = new EBMLFloat64(this.#duration);
+			this.#target.seek(this.#target.offsets.get(this.#segmentDuration));
+			this.#target.writeEBML(this.#segmentDuration);
 
-		// Fill in SeekHead position data and write it again
-		this.#seekHead.data[0].data[1].data =
-			this.#target.offsets.get(this.#cues) - this.#segmentDataOffset;
-		this.#seekHead.data[1].data[1].data =
-			this.#target.offsets.get(this.#segmentInfo) - this.#segmentDataOffset;
-		this.#seekHead.data[2].data[1].data =
-			this.#target.offsets.get(this.#tracksElement) - this.#segmentDataOffset;
+			// Fill in SeekHead position data and write it again
+			this.#seekHead.data[0].data[1].data =
+				this.#target.offsets.get(this.#cues) - this.#segmentDataOffset;
+			this.#seekHead.data[1].data[1].data =
+				this.#target.offsets.get(this.#segmentInfo) - this.#segmentDataOffset;
+			this.#seekHead.data[2].data[1].data =
+				this.#target.offsets.get(this.#tracksElement) - this.#segmentDataOffset;
 
-		this.#target.seek(this.#target.offsets.get(this.#seekHead));
-		this.#target.writeEBML(this.#seekHead);
+			this.#target.seek(this.#target.offsets.get(this.#seekHead));
+			this.#target.writeEBML(this.#seekHead);
+		}
 
 		this.#target.seek(endPos);
 		this.#finalized = true;
