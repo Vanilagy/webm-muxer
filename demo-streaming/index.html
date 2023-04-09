@@ -11,13 +11,13 @@
 	</head>
 	<body>
 		<main>
-			<h1>WebM muxer demo - record your camera and microphone!</h1>
-			<h2>Your camera and your microphone input will be recorded<br>and muxed into a WebM file.</h2>
+			<h1>WebM muxer streaming demo - record your camera and microphone!</h1>
+			<h2>Your camera and your microphone input will be recorded,<br>muxed into a WebM stream and shown in the &lt;video&gt; element below.</h2>
 			<div id="controls">
 				<button id="start-recording">Start recording</button>
-				<button id="end-recording" style="display: none;">End recording</button>
+				<button id="end-recording" style="display: none;">Stop recording</button>
 			</div>
-			<video id="cam-preview" width="640" height="360" muted></canvas>
+			<video id="stream-preview" width="640" height="360" controls></video>
 			<p id="recording-status"></p>
 		</main>
 	</body>

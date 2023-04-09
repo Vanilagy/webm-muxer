@@ -1,4 +1,4 @@
-const camPreview = document.querySelector('#cam-preview');
+const streamPreview = document.querySelector('#stream-preview');
 const startRecordingButton = document.querySelector('#start-recording');
 const endRecordingButton = document.querySelector('#end-recording');
 const recordingStatus = document.querySelector('#recording-status');
@@ -13,7 +13,6 @@ let recording = false;
 let audioTrack = null;
 let videoTrack = null;
 let intervalId = null;
-let buffers = [];
 
 const startRecording = async () => {
 	// Check for AudioEncoder availability
@@ -34,11 +33,18 @@ const startRecording = async () => {
 		let userMedia = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 		audioTrack = userMedia.getAudioTracks()[0];
 		videoTrack = userMedia.getVideoTracks()[0];
-		camPreview.srcObject = userMedia;
-		camPreview.play();
 	} catch (e) {}
 	if (!audioTrack) console.warn("Couldn't acquire a user media audio track.");
 	if (!videoTrack) console.warn("Couldn't acquire a user media video track.");
+
+	let mediaSource = new MediaSource();
+	streamPreview.src = URL.createObjectURL(mediaSource);
+	streamPreview.play();
+
+	await new Promise(resolve => mediaSource.onsourceopen = resolve);
+
+	// We'll append ArrayBuffers to this as the muxer starts to spit out chunks
+	let sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp9, opus"');
 
 	endRecordingButton.style.display = 'block';
 
@@ -46,16 +52,10 @@ const startRecording = async () => {
 	let videoTrackWidth = videoTrack?.getSettings().width;
 	let videoTrackHeight = videoTrack?.getSettings().height;
 
-	// Create a WebM muxer with a video track and maybe an audio track
+	// Create a WebM muxer with a video track and audio track, if available
 	muxer = new WebMMuxer({
 		streaming: true,
-		target: (buffer, offset, done) => {
-			buffers.push(buffer);
-
-			if (done) {
-				downloadBlob(new Blob(buffers));
-			}
-		},
+		target: buffer => sourceBuffer.appendBuffer(buffer),
 		video: videoTrack ? {
 			codec: 'V_VP9',
 			width: videoTrackWidth,
@@ -139,7 +139,7 @@ const recordingTimer = () => {
 		`${elapsedTime % 1000 < 500 ? '🔴' : '⚫'} Recording - ${(elapsedTime / 1000).toFixed(1)} s`;
 };
 
-const endRecording = async () => {
+const stopRecording = async () => {
 	endRecordingButton.style.display = 'none';
 	recordingStatus.textContent = '';
 	recording = false;
@@ -159,15 +159,4 @@ const endRecording = async () => {
 
 	startRecordingButton.style.display = 'block';
 };
-endRecordingButton.addEventListener('click', endRecording);
-
-const downloadBlob = (blob) => {
-	let url = window.URL.createObjectURL(blob);
-	let a = document.createElement('a');
-	a.style.display = 'none';
-	a.href = url;
-	a.download = 'picasso.webm';
-	document.body.appendChild(a);
-	a.click();
-	window.URL.revokeObjectURL(url);
-};
+endRecordingButton.addEventListener('click', stopRecording);
