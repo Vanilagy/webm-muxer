@@ -104,12 +104,10 @@ class WebMMuxer {
 		} else if (options.target instanceof FileSystemWritableFileStream) {
 			this.#target = new FileSystemWritableFileStreamWriteTarget(options.target);
 		} else if (typeof options.target === 'function') {
-			this.#target = new StreamingWriteTarget(options.target);
+			this.#target = new StreamingWriteTarget(options.target, !!options.streaming);
 		} else {
 			throw new Error(`Invalid target: ${options.target}`);
 		}
-
-		if (options.streaming) this.#target.enforceMonotonicity = true;
 
 		this.#createFileHeader();
 	}

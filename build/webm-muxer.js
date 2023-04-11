@@ -117,14 +117,10 @@ var WebMMuxer = (() => {
       this.pos = 0;
       this.offsets = /* @__PURE__ */ new WeakMap();
       this.dataOffsets = /* @__PURE__ */ new WeakMap();
-      this.enforceMonotonicity = false;
       __privateAdd(this, _helper, new Uint8Array(8));
       __privateAdd(this, _helperView, new DataView(__privateGet(this, _helper).buffer));
     }
     seek(newPos) {
-      if (this.enforceMonotonicity && newPos < this.pos) {
-        throw new Error("Internal error: Monotonicity violation.");
-      }
       this.pos = newPos;
     }
     writeEBMLVarInt(value, width = measureEBMLVarInt(value)) {
@@ -286,9 +282,6 @@ var WebMMuxer = (() => {
       __privateGet(this, _bytes).set(data, this.pos);
       this.pos += data.byteLength;
     }
-    seek(newPos) {
-      this.pos = newPos;
-    }
     finalize() {
       this.ensureSize(this.pos);
       return __privateGet(this, _buffer).slice(0, this.pos);
@@ -364,9 +357,6 @@ var WebMMuxer = (() => {
         __privateGet(this, _chunks).splice(i--, 1);
       }
     }
-    seek(newPos) {
-      this.pos = newPos;
-    }
     finalize() {
       this.flushChunks(true);
     }
@@ -394,13 +384,16 @@ var WebMMuxer = (() => {
       chunk.written.splice(index + 1, 1);
     }
   };
-  var _sections, _onFlush;
+  var _sections, _onFlush, _lastFlushEnd, _ensureMonotonicity;
   var StreamingWriteTarget = class extends WriteTarget {
-    constructor(onFlush) {
+    constructor(onFlush, ensureMonotonicity) {
       super();
       __privateAdd(this, _sections, []);
       __privateAdd(this, _onFlush, void 0);
+      __privateAdd(this, _lastFlushEnd, 0);
+      __privateAdd(this, _ensureMonotonicity, void 0);
       __privateSet(this, _onFlush, onFlush);
+      __privateSet(this, _ensureMonotonicity, ensureMonotonicity);
     }
     write(data) {
       __privateGet(this, _sections).push({
@@ -408,9 +401,6 @@ var WebMMuxer = (() => {
         start: this.pos
       });
       this.pos += data.byteLength;
-    }
-    seek(newPos) {
-      this.pos = newPos;
     }
     flush(done) {
       if (__privateGet(this, _sections).length === 0)
@@ -440,14 +430,20 @@ var WebMMuxer = (() => {
             chunk.data.set(section.data, section.start - chunk.start);
           }
         }
+        if (__privateGet(this, _ensureMonotonicity) && chunk.start < __privateGet(this, _lastFlushEnd)) {
+          throw new Error("Internal error: Monotonicity violation.");
+        }
         let isLastFlush = done && chunk === chunks[chunks.length - 1];
         __privateGet(this, _onFlush).call(this, chunk.data, chunk.start, isLastFlush);
+        __privateSet(this, _lastFlushEnd, chunk.start + chunk.data.byteLength);
       }
       __privateGet(this, _sections).length = 0;
     }
   };
   _sections = new WeakMap();
   _onFlush = new WeakMap();
+  _lastFlushEnd = new WeakMap();
+  _ensureMonotonicity = new WeakMap();
 
   // src/main.ts
   var VIDEO_TRACK_NUMBER = 1;
@@ -517,12 +513,10 @@ var WebMMuxer = (() => {
       } else if (options.target instanceof FileSystemWritableFileStream) {
         __privateSet(this, _target, new FileSystemWritableFileStreamWriteTarget(options.target));
       } else if (typeof options.target === "function") {
-        __privateSet(this, _target, new StreamingWriteTarget(options.target));
+        __privateSet(this, _target, new StreamingWriteTarget(options.target, !!options.streaming));
       } else {
         throw new Error(`Invalid target: ${options.target}`);
       }
-      if (options.streaming)
-        __privateGet(this, _target).enforceMonotonicity = true;
       __privateMethod(this, _createFileHeader, createFileHeader_fn).call(this);
     }
     addVideoChunk(chunk, meta, timestamp) {

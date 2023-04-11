@@ -13,8 +13,6 @@ export abstract class WriteTarget {
 	offsets = new WeakMap<EBML, number>();
 	/** Same as offsets, but stores position where the element's data starts (after ID and size fields). */
 	dataOffsets = new WeakMap<EBML, number>();
-	/** When set, throws an error if we try to seek backwards. */
-	enforceMonotonicity = false;
 
 	#helper = new Uint8Array(8);
 	#helperView = new DataView(this.#helper.buffer);
@@ -24,10 +22,6 @@ export abstract class WriteTarget {
 
 	/** Sets the current position for future writes to a new one. */
 	seek(newPos: number) {
-		if (this.enforceMonotonicity && newPos < this.pos) {
-			throw new Error("Internal error: Monotonicity violation.");
-		}
-
 		this.pos = newPos;
 	}
 
@@ -213,10 +207,6 @@ export class ArrayBufferWriteTarget extends WriteTarget {
 		this.pos += data.byteLength;
 	}
 
-	seek(newPos: number) {
-		this.pos = newPos;
-	}
-
 	finalize() {
 		this.ensureSize(this.pos);
 		return this.#buffer.slice(0, this.pos);
@@ -332,10 +322,6 @@ export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
 		}
 	}
 
-	seek(newPos: number) {
-		this.pos = newPos;
-	}
-
 	finalize() {
 		this.flushChunks(true);
 	}
@@ -380,10 +366,14 @@ export class StreamingWriteTarget extends WriteTarget {
 	}[] = [];
 	#onFlush: (data: Uint8Array, offset: number, done: boolean) => void;
 
-	constructor(onFlush: (data: Uint8Array, offset: number, done: boolean) => void) {
+	#lastFlushEnd = 0;
+	#ensureMonotonicity: boolean;
+
+	constructor(onFlush: (data: Uint8Array, offset: number, done: boolean) => void, ensureMonotonicity: boolean) {
 		super();
 
 		this.#onFlush = onFlush;
+		this.#ensureMonotonicity = ensureMonotonicity;
 	}
 
 	write(data: Uint8Array) {
@@ -392,10 +382,6 @@ export class StreamingWriteTarget extends WriteTarget {
 			start: this.pos
 		});
 		this.pos += data.byteLength;
-	}
-
-	seek(newPos: number) {
-		this.pos = newPos;
 	}
 
 	flush(done: boolean) {
@@ -439,8 +425,13 @@ export class StreamingWriteTarget extends WriteTarget {
 				}
 			}
 
+			if (this.#ensureMonotonicity && chunk.start < this.#lastFlushEnd) {
+				throw new Error("Internal error: Monotonicity violation.");
+			}
+
 			let isLastFlush = done && chunk === chunks[chunks.length - 1];
 			this.#onFlush(chunk.data, chunk.start, isLastFlush);
+			this.#lastFlushEnd = chunk.start + chunk.data.byteLength;
 		}
 
 		this.#sections.length = 0;
