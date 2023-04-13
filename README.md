@@ -11,6 +11,8 @@ high-quality, fast and tiny, and supports both video and audio as well as live-s
 
 [Demo: Streaming](https://vanilagy.github.io/webm-muxer/demo-streaming/)
 
+> **Note:** If you're looking to create **MP4** files, check out [mp4-muxer](https://github.com/Vanilagy/mp4-muxer), the sister library to webm-muxer.
+
 ## Quick start
 The following is an example for a common usage of this library:
 ```js
