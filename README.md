@@ -284,7 +284,7 @@ somewhat limited in size or the chunks are encoded in a somewhat interleaved way
 ### Size "limits"
 This library can mux WebM files up to a total size of ~4398 GB and with a Matroska Cluster size of ~34 GB.
 
-## Implementation
+## Implementation & development
 WebM files are a subset of the more general Matroska media container format. Matroska in turn uses a format known as
 EBML (think of it like binary XML) to structure its file. This project therefore implements a simple EBML writer to
 create the Matroska elements needed to form a WebM file. Many thanks to
