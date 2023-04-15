@@ -16,10 +16,10 @@ high-quality, fast and tiny, and supports both video and audio as well as live-s
 ## Quick start
 The following is an example for a common usage of this library:
 ```js
-import WebMMuxer from 'webm-muxer';
+import { Muxer, ArrayBufferTarget } from 'webm-muxer';
 
-let muxer = new WebMMuxer({
-    target: 'buffer',
+let muxer = new Muxer({
+    target: new ArrayBufferTarget(),
     video: {
         codec: 'V_VP9',
         width: 1280,
@@ -41,7 +41,9 @@ videoEncoder.configure({
 /* Encode some frames... */
 
 await videoEncoder.flush();
-let buffer = muxer.finalize(); // Buffer contains final WebM file
+muxer.finalize();
+
+let { buffer } = muxer.target; // Buffer contains final WebM file
 ```
 
 ## Motivation
@@ -57,30 +59,33 @@ Using NPM, simply install this package using
 ```
 npm install webm-muxer
 ```
-The package has a single, default export, `WebMMuxer`:
+You can import all exported classes like so:
 ```js
-import WebMMuxer from 'webm-muxer';
+import * as WebMMuxer from 'webm-muxer';
 // Or, using CommonJS:
 const WebMMuxer = require('webm-muxer');
 ```
-Alternatively, you can simply include the library as a script in your HTML, which will add `WebMMuxer` to the global
-object, like so:
+Alternatively, you can simply include the library as a script in your HTML, which will add a `WebMMuxer` object,
+containing all the exported classes, to the global object, like so:
 ```html
 <script src="build/webm-muxer.js"></script>
 ```
 
 ## Usage
 ### Initialization
-For each WebM file you wish to create, create an instance of `WebMMuxer` like so:
+For each WebM file you wish to create, create an instance of `Muxer` like so:
 ```js
-let muxer = new WebMMuxer(options);
+import { Muxer } from 'webm-muxer';
+
+let muxer = new Muxer(options);
 ```
 The available options are defined by the following interface:
 ```ts
-interface WebMMuxerOptions {
-    target: 'buffer'
-        | ((data: Uint8Array, offset: number, done: boolean) => void)
-        | FileSystemWritableFileStream
+interface MuxerOptions {
+    target:
+        | ArrayBufferTarget
+        | StreamTarget
+        | FileSystemWritableFileStreamTarget,
 
     video?: {
         codec: string,
@@ -106,47 +111,57 @@ interface WebMMuxerOptions {
 ```
 Codecs officially supported by WebM are `V_VP8`, `V_VP9`, `V_AV1`, `A_OPUS` and `A_VORBIS`.
 #### `target`
-This option specifies what will happens with the data created by the muxer. The options are:
-- `'buffer'`: The file data will be written into a single, large buffer which is then returned by `finalize`.
+This option specifies where the data created by the muxer will be written. The options are:
+- `ArrayBufferTarget`: The file data will be written into a single large buffer, which is then stored in the target.
 
     ```js
-    let muxer = new WebMMuxer({
-        target: 'buffer',
-        video: {
-            codec: 'V_VP9',
-            width: 1280,
-            height: 720
-        }
+    import { Muxer, ArrayBufferTarget } from 'webm-muxer';
+
+    let muxer = new Muxer({
+        target: new ArrayBufferTarget(),
+        // ...
     });
 
     // ...
 
-    let buffer = muxer.finalize();
+    muxer.finalize();
+    let { buffer } = muxer.target;
     ```
-- `function`: If the target is a function, it will be called each time data is output by the muxer - this is useful if
-    you want to stream the data. The function will be called with three arguments: the data to write, the offset in
-    bytes at which to write the data and a boolean indicating whether the muxer is done writing data. Note that the same
-    segment of bytes might be written to multiple times, and therefore you need to write the data in the same order the
-    function gave it to you. If you don't want this, set `streaming` to `true`.
+- `StreamTarget`: This target defines callbacks that will get called whenever there is new data available  - this is useful if
+    you want to stream the data, e.g. pipe it somewhere else. The constructor has the following signature:
+
+    ```ts
+    constructor(
+        onData: (data: Uint8Array, position: number) => void,
+        onDone?: () => void,
+        options?: { chunked?: true }
+    );
+    ```
+
+    The `position` parameter specifies the offset in bytes at which the data should be written. When using
+    `chunked: true` in the options, data created by the muxer will first be accumulated and only written out once it has
+    reached sufficient size (~16 MB). This is useful for reducing the total amount of writes, at the cost of latency.
+    
+    Note that this target is **not** intended for *live-streaming*, i.e. playback before muxing has finished.
 
     ```js
-    let muxer = new WebMMuxer({
-        target: (data, offset, done) => {
-            // Do something with the data
-        },
-        audio: {
-            codec: 'A_OPUS',
-            numberOfChannels: 1,
-            sampleRate: 44100
-        }
+    import { Muxer, StreamTarget } from 'webm-muxer';
+
+    let muxer = new Muxer({
+        target: new StreamTarget(
+            (data, position) => { /* Do something with the data */ },
+            () => { /* Muxing has finished */ }
+        ),
+        // ...
     });
     ```
-- `FileSystemWritableFileStream`: When acquired through the File System Access API, the
-    muxed file is written directly to disk, allowing for files way larger than what would fit in RAM. This functionality
-    could also be manually emulated by passing a `function` instead, however, this library has some built-in write
-    batching optimization which will be used when passing a FileSystemWritableFileStream.
+- `FileSystemWritableFileStreamTarget`: This is essentially a wrapper around `StreamTarget` with the intention of
+    simplifying the use of this library with the File System Access API. Writing the file directly to disk as it's being
+    created comes with many benefits, such as creating files way larger than the available RAM.
 
     ```js
+    import { Muxer, FileSystemWritableFileStreamTarget } from 'webm-muxer';
+    
     let fileHandle = await window.showSaveFilePicker({
         suggestedName: `video.webm`,
         types: [{
@@ -154,21 +169,16 @@ This option specifies what will happens with the data created by the muxer. The 
             accept: { 'video/webm': ['.webm'] }
         }],
     });
-    let fileWritableStream = await fileHandle.createWritable();
-    let muxer = new WebMMuxer({
-        target: fileWritableStream,
-        video: {
-            codec: 'V_VP9',
-            width: 1920,
-            height: 1080,
-            frameRate: 60
-        },
-        audio: {
-            codec: 'A_OPUS',
-            numberOfChannels: 2,
-            sampleRate: 48000
-        }
+    let fileStream = await fileHandle.createWritable();
+    let muxer = new Muxer({
+        target: new FileSystemWritableFileStreamTarget(fileStream),
+        // ...
     });
+    
+    // ...
+
+    muxer.finalize();
+    await fileStream.close(); // Make sure to close the stream
     ```
 #### `streaming` (optional)
 Configures the muxer to only write data monotonically, useful for live-streaming the WebM as it's being muxed; intended
@@ -192,14 +202,23 @@ starts at 0.
 - Use `'permissive'` to allow the first timestamp to be non-zero.
 
 ### Muxing media chunks
-Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxer like so:
-```js
-muxer.addVideoChunk(encodedVideoChunk, encodedVideoChunkMetadata);
-muxer.addAudioChunk(encodedAudioChunk, encodedAudioChunkMetadata);
+Then, with VideoEncoder and AudioEncoder set up, send encoded chunks to the muxer using the following methods:
+```ts
+addVideoChunk(
+    chunk: EncodedVideoChunk,
+    meta: EncodedVideoChunkMetadata,
+    timestamp?: number
+): void;
+
+addAudioChunk(
+    chunk: EncodedAudioChunk,
+    meta: EncodedAudioChunkMetadata,
+    timestamp?: number
+): void;
 ```
-In addition, both methods accept an optional, third argument `timestamp` (microseconds) which, if specified, overrides
-the `timestamp` property of the passed-in chunk. This is useful when getting chunks from a MediaStreamTrackProcessor
-from live media, which usually come with huge timestamp values and don't start at 0, which we want.
+
+Both methods accept an optional, third argument `timestamp` (microseconds) which, if specified, overrides
+the `timestamp` property of the passed-in chunk.
 
 The metadata comes from the second parameter of the `output` callback given to the
 VideoEncoder or AudioEncoder's constructor and needs to be passed into the muxer, like so:
@@ -230,14 +249,18 @@ addAudioChunkRaw(
 ```
 
 ### Finishing up
-When encoding is finished, call `finalize` on the `WebMMuxer` instance to finalize the WebM file. When using
-`target: 'buffer'`, the resulting file's buffer is returned by this method:
+When encoding is finished and all the encoders have been flushed, call `finalize` on the `Muxer` instance to finalize
+the WebM file:
 ```js
-let buffer = muxer.finalize();
+muxer.finalize();
 ```
-When using a FileSystemWritableFileStream, make sure to close the stream after calling `finalize`:
+When using an ArrayBufferTarget, the final buffer will be accessible through it:
 ```js
-await fileWritableStream.close();
+let { buffer } = muxer.target;
+```
+When using a FileSystemWritableFileStreamTarget, make sure to close the stream after calling `finalize`:
+```js
+await fileStream.close();
 ```
 
 ## Details

@@ -1,16 +1,25 @@
 const esbuild = require('esbuild');
 
 const config = {
-	entryPoints: ['src/main.ts'],
+	entryPoints: ['src/index.ts'],
 	bundle: true,
 	outfile: 'build/webm-muxer.js',
 	logLevel: 'info',
 	watch: true,
 	format: 'iife',
+
 	// The following are hacks to basically make this an UMD module. No native support for that in esbuild as of today
 	globalName: 'WebMMuxer',
+
+	// Object.assign(module.exports, WebMMuxer) would make us lose named exports in CJS-to-ESM interop
 	footer: {
-		js: 'WebMMuxer = WebMMuxer.default;\nif (typeof module === "object" && typeof module.exports === "object") module.exports = WebMMuxer;'
+		js:
+`if (typeof module === "object" && typeof module.exports === "object") {
+	module.exports.Muxer = WebMMuxer.Muxer;
+	module.exports.ArrayBufferTarget = WebMMuxer.ArrayBufferTarget;
+	module.exports.StreamTarget = WebMMuxer.StreamTarget;
+	module.exports.FileSystemWritableFileStreamTarget = WebMMuxer.FileSystemWritableFileStreamTarget;
+}`
 	}
 };
 

@@ -53,9 +53,9 @@ const startRecording = async () => {
 	let videoTrackHeight = videoTrack?.getSettings().height;
 
 	// Create a WebM muxer with a video track and audio track, if available
-	muxer = new WebMMuxer({
+	muxer = new WebMMuxer.Muxer({
 		streaming: true,
-		target: buffer => sourceBuffer.appendBuffer(buffer),
+		target: new WebMMuxer.StreamTarget(buffer => sourceBuffer.appendBuffer(buffer)),
 		video: videoTrack ? {
 			codec: 'V_VP9',
 			width: videoTrackWidth,
@@ -80,7 +80,7 @@ const startRecording = async () => {
 			codec: 'opus',
 			numberOfChannels: 1,
 			sampleRate: audioSampleRate,
-			bitrate: 64000,
+			bitrate: 64000
 		});
 
 		// Create a MediaStreamTrackProcessor to get AudioData chunks from the audio track

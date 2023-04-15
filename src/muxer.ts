@@ -1,10 +1,13 @@
-import { EBMLElement, EBML, EBMLFloat64, EBMLFloat32, EBMLId } from "./ebml";
+import { EBML, EBMLElement, EBMLFloat32, EBMLFloat64, EBMLId } from './ebml';
+import { readBits, writeBits } from './misc';
+import { ArrayBufferTarget, FileSystemWritableFileStreamTarget, StreamTarget, Target } from './target';
 import {
-	WriteTarget,
-	ArrayBufferWriteTarget,
-	FileSystemWritableFileStreamWriteTarget,
-	StreamingWriteTarget
-} from "./write_target";
+	ArrayBufferTargetWriter,
+	ChunkedStreamTargetWriter,
+	FileSystemWritableFileStreamTargetWriter,
+	StreamTargetWriter,
+	Writer
+} from './writer';
 
 const VIDEO_TRACK_NUMBER = 1;
 const AUDIO_TRACK_NUMBER = 2;
@@ -17,11 +20,8 @@ const SEGMENT_SIZE_BYTES = 6;
 const CLUSTER_SIZE_BYTES = 5;
 const FIRST_TIMESTAMP_BEHAVIORS = ['strict',  'offset', 'permissive'] as const;
 
-interface WebMMuxerOptions {
-	target:
-		'buffer'
-		| ((data: Uint8Array, offset: number, done: boolean) => void)
-		| FileSystemWritableFileStream,
+interface MuxerOptions<T extends Target> {
+	target: T,
 	video?: {
 		codec: string,
 		width: number,
@@ -63,9 +63,11 @@ interface SeekHead {
 	}[]
 }
 
-class WebMMuxer {
-	#target: WriteTarget;
-	#options: WebMMuxerOptions;
+export class Muxer<T extends Target> {
+	target: T;
+
+	#options: MuxerOptions<T>;
+	#writer: Writer;
 
 	#segment: EBMLElement;
 	#segmentInfo: EBMLElement;
@@ -90,7 +92,7 @@ class WebMMuxer {
 	#colorSpace: VideoColorSpaceInit;
 	#finalized = false;
 
-	constructor(options: WebMMuxerOptions) {
+	constructor(options: MuxerOptions<T>) {
 		this.#validateOptions(options);
 
 		this.#options = {
@@ -98,13 +100,18 @@ class WebMMuxer {
 			firstTimestampBehavior: 'strict',
 			...options
 		};
+		this.target = options.target;
 
-		if (options.target === 'buffer') {
-			this.#target = new ArrayBufferWriteTarget();
-		} else if (options.target instanceof FileSystemWritableFileStream) {
-			this.#target = new FileSystemWritableFileStreamWriteTarget(options.target);
-		} else if (typeof options.target === 'function') {
-			this.#target = new StreamingWriteTarget(options.target, !!options.streaming);
+		let ensureMonotonicity = !!this.#options.streaming;
+
+		if (options.target instanceof ArrayBufferTarget) {
+			this.#writer = new ArrayBufferTargetWriter(options.target);
+		} else if (options.target instanceof StreamTarget) {
+			this.#writer = options.target.options?.chunked
+				? new ChunkedStreamTargetWriter(options.target, ensureMonotonicity)
+				: new StreamTargetWriter(options.target, ensureMonotonicity);
+		} else if (options.target instanceof FileSystemWritableFileStreamTarget) {
+			this.#writer = new FileSystemWritableFileStreamTargetWriter(options.target, ensureMonotonicity);
 		} else {
 			throw new Error(`Invalid target: ${options.target}`);
 		}
@@ -112,7 +119,7 @@ class WebMMuxer {
 		this.#createFileHeader();
 	}
 
-	#validateOptions(options: WebMMuxerOptions) {
+	#validateOptions(options: MuxerOptions<T>) {
 		if (options.type && options.type !== 'webm' && options.type !== 'matroska') {
 			throw new Error(`Invalid type: ${options.type}`);
 		}
@@ -142,7 +149,7 @@ class WebMMuxer {
 
 		this.#createCues();
 
-		this.#maybeFlushStreamingTarget();
+		this.#maybeFlushStreamingTargetWriter();
 	}
 
 	#writeEBMLHeader() {
@@ -155,7 +162,7 @@ class WebMMuxer {
 			{ id: EBMLId.DocTypeVersion, data: 2 },
 			{ id: EBMLId.DocTypeReadVersion, data: 2 }
 		] };
-		this.#target.writeEBML(ebmlHeader);
+		this.#writer.writeEBML(ebmlHeader);
 	}
 
 	/** Reserve 4 kiB for the CodecPrivate elements so we can write them later. */
@@ -271,21 +278,21 @@ class WebMMuxer {
 		};
 		this.#segment = segment;
 
-		this.#target.writeEBML(segment);
+		this.#writer.writeEBML(segment);
 	}
 
 	#createCues() {
 		this.#cues = { id: EBMLId.Cues, data: [] };
 	}
 
-	#maybeFlushStreamingTarget() {
-		if (this.#target instanceof StreamingWriteTarget) {
-			this.#target.flush(false);
+	#maybeFlushStreamingTargetWriter() {
+		if (this.#writer instanceof StreamTargetWriter) {
+			this.#writer.flush();
 		}
 	}
 
 	get #segmentDataOffset() {
-		return this.#target.dataOffsets.get(this.#segment);
+		return this.#writer.dataOffsets.get(this.#segment);
 	}
 
 	addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number) {
@@ -297,7 +304,7 @@ class WebMMuxer {
 
 	addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata) {
 		this.#ensureNotFinalized();
-		if (!this.#options.video) throw new Error("No video track declared.");
+		if (!this.#options.video) throw new Error('No video track declared.');
 
 		if (this.#firstVideoTimestamp === undefined) this.#firstVideoTimestamp = timestamp;
 		if (meta) this.#writeVideoDecoderConfig(meta);
@@ -329,7 +336,7 @@ class WebMMuxer {
 			this.#videoChunkQueue.push(internalChunk);
 		}
 
-		this.#maybeFlushStreamingTarget();
+		this.#maybeFlushStreamingTargetWriter();
 	}
 
 	/** Writes possible video decoder metadata to the file. */
@@ -361,10 +368,10 @@ class WebMMuxer {
 			];
 
 			if (!this.#options.streaming) {
-				let endPos = this.#target.pos;
-				this.#target.seek(this.#target.offsets.get(this.#colourElement));
-				this.#target.writeEBML(this.#colourElement);
-				this.#target.seek(endPos);
+				let endPos = this.#writer.pos;
+				this.#writer.seek(this.#writer.offsets.get(this.#colourElement));
+				this.#writer.writeEBML(this.#colourElement);
+				this.#writer.seek(endPos);
 			}
 		}
 
@@ -422,7 +429,7 @@ class WebMMuxer {
 
 	addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata) {
 		this.#ensureNotFinalized();
-		if (!this.#options.audio) throw new Error("No audio track declared.");
+		if (!this.#options.audio) throw new Error('No audio track declared.');
 
 		if (this.#firstAudioTimestamp === undefined) this.#firstAudioTimestamp = timestamp;
 
@@ -451,7 +458,7 @@ class WebMMuxer {
 			this.#audioChunkQueue.push(internalChunk);
 		}
 
-		this.#maybeFlushStreamingTarget();
+		this.#maybeFlushStreamingTargetWriter();
 	}
 
 	/** Converts a read-only external chunk into an internal one for easier use. */
@@ -538,7 +545,7 @@ class WebMMuxer {
 			prelude,
 			chunk.data
 		] };
-		this.#target.writeEBML(simpleBlock);
+		this.#writer.writeEBML(simpleBlock);
 
 		this.#duration = Math.max(this.#duration, msTime);
 	}
@@ -552,16 +559,16 @@ class WebMMuxer {
 	 * necessary size.
 	 */
 	#writeCodecPrivate(element: EBML, data: AllowSharedBufferSource) {
-		let endPos = this.#target.pos;
-		this.#target.seek(this.#target.offsets.get(element));
+		let endPos = this.#writer.pos;
+		this.#writer.seek(this.#writer.offsets.get(element));
 
 		element = [
 			this.#createCodecPrivateElement(data),
 			{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE - 2 - 4 - data.byteLength) }
 		];
 
-		this.#target.writeEBML(element);
-		this.#target.seek(endPos);
+		this.#writer.writeEBML(element);
+		this.#writer.seek(endPos);
 	}
 
 	/** Creates a new Cluster element to contain video and audio chunks. */
@@ -577,12 +584,12 @@ class WebMMuxer {
 				{ id: EBMLId.Timestamp, data: timestamp }
 			]
 		};
-		this.#target.writeEBML(this.#currentCluster);
+		this.#writer.writeEBML(this.#currentCluster);
 
 		this.#currentClusterTimestamp = timestamp;
 
 		let clusterOffsetFromSegment =
-			this.#target.offsets.get(this.#currentCluster) - this.#segmentDataOffset;
+			this.#writer.offsets.get(this.#currentCluster) - this.#segmentDataOffset;
 
 		// Add a CuePoint to the Cues element for better seeking
 		(this.#cues.data as EBML[]).push({ id: EBMLId.CuePoint, data: [
@@ -599,13 +606,13 @@ class WebMMuxer {
 	}
 
 	#finalizeCurrentCluster() {
-		let clusterSize = this.#target.pos - this.#target.dataOffsets.get(this.#currentCluster);
-		let endPos = this.#target.pos;
+		let clusterSize = this.#writer.pos - this.#writer.dataOffsets.get(this.#currentCluster);
+		let endPos = this.#writer.pos;
 
 		// Write the size now that we know it
-		this.#target.seek(this.#target.offsets.get(this.#currentCluster) + 4);
-		this.#target.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
-		this.#target.seek(endPos);
+		this.#writer.seek(this.#writer.offsets.get(this.#currentCluster) + 4);
+		this.#writer.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
+		this.#writer.seek(endPos);
 	}
 
 	/** Finalizes the file, making it ready for use. Must be called after all video and audio chunks have been added. */
@@ -617,80 +624,44 @@ class WebMMuxer {
 		if (!this.#options.streaming) {
 			this.#finalizeCurrentCluster();
 		}
-		this.#target.writeEBML(this.#cues);
+		this.#writer.writeEBML(this.#cues);
 
 		if (!this.#options.streaming) {
-			let endPos = this.#target.pos;
+			let endPos = this.#writer.pos;
 
 			// Write the Segment size
-			let segmentSize = this.#target.pos - this.#segmentDataOffset;
-			this.#target.seek(this.#target.offsets.get(this.#segment) + 4);
-			this.#target.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
+			let segmentSize = this.#writer.pos - this.#segmentDataOffset;
+			this.#writer.seek(this.#writer.offsets.get(this.#segment) + 4);
+			this.#writer.writeEBMLVarInt(segmentSize, SEGMENT_SIZE_BYTES);
 
 			// Write the duration of the media to the Segment
 			this.#segmentDuration.data = new EBMLFloat64(this.#duration);
-			this.#target.seek(this.#target.offsets.get(this.#segmentDuration));
-			this.#target.writeEBML(this.#segmentDuration);
+			this.#writer.seek(this.#writer.offsets.get(this.#segmentDuration));
+			this.#writer.writeEBML(this.#segmentDuration);
 
 			// Fill in SeekHead position data and write it again
 			this.#seekHead.data[0].data[1].data =
-				this.#target.offsets.get(this.#cues) - this.#segmentDataOffset;
+				this.#writer.offsets.get(this.#cues) - this.#segmentDataOffset;
 			this.#seekHead.data[1].data[1].data =
-				this.#target.offsets.get(this.#segmentInfo) - this.#segmentDataOffset;
+				this.#writer.offsets.get(this.#segmentInfo) - this.#segmentDataOffset;
 			this.#seekHead.data[2].data[1].data =
-				this.#target.offsets.get(this.#tracksElement) - this.#segmentDataOffset;
+				this.#writer.offsets.get(this.#tracksElement) - this.#segmentDataOffset;
 
-			this.#target.seek(this.#target.offsets.get(this.#seekHead));
-			this.#target.writeEBML(this.#seekHead);
+			this.#writer.seek(this.#writer.offsets.get(this.#seekHead));
+			this.#writer.writeEBML(this.#seekHead);
 
-			this.#target.seek(endPos);
+			this.#writer.seek(endPos);
 		}
+
+		this.#maybeFlushStreamingTargetWriter();
+		this.#writer.finalize();
 
 		this.#finalized = true;
-
-		if (this.#target instanceof ArrayBufferWriteTarget) {
-			return this.#target.finalize();
-		} else if (this.#target instanceof FileSystemWritableFileStreamWriteTarget) {
-			this.#target.finalize();
-		} else if (this.#target instanceof StreamingWriteTarget) {
-			this.#target.flush(true);
-		}
-
-		return null;
 	}
 
 	#ensureNotFinalized() {
 		if (this.#finalized) {
-			throw new Error("Cannot add new video or audio chunks after the file has been finalized.");
+			throw new Error('Cannot add new video or audio chunks after the file has been finalized.');
 		}
 	}
 }
-
-export default WebMMuxer;
-
-const readBits = (bytes: Uint8Array, start: number, end: number) => {
-	let result = 0;
-
-	for (let i = start; i < end; i++) {
-		let byteIndex = Math.floor(i / 8);
-		let byte = bytes[byteIndex];
-		let bitIndex = 0b111 - (i & 0b111);
-		let bit = (byte & (1 << bitIndex)) >> bitIndex;
-
-		result <<= 1;
-		result |= bit;
-	}
-
-	return result;
-};
-const writeBits = (bytes: Uint8Array, start: number, end: number, value: number) => {
-	for (let i = start; i < end; i++) {
-		let byteIndex = Math.floor(i / 8);
-		let byte = bytes[byteIndex];
-		let bitIndex = 0b111 - (i & 0b111);
-
-		byte &= ~(1 << bitIndex);
-		byte |= ((value & (1 << (end - i - 1))) >> (end - i - 1)) << bitIndex;
-		bytes[byteIndex] = byte;
-	}
-};

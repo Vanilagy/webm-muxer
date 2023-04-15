@@ -33,7 +33,7 @@ const startRecording = async () => {
 		} catch (e) {}
 		if (!audioTrack) console.warn("Couldn't acquire a user media audio track.");
 	} else {
-		console.warn("AudioEncoder not available; no need to acquire a user media audio track.");
+		console.warn('AudioEncoder not available; no need to acquire a user media audio track.');
 	}
 
 	endRecordingButton.style.display = 'block';
@@ -41,8 +41,8 @@ const startRecording = async () => {
 	let audioSampleRate = audioTrack?.getCapabilities().sampleRate.max;
 
 	// Create a WebM muxer with a video track and maybe an audio track
-	muxer = new WebMMuxer({
-		target: 'buffer',
+	muxer = new WebMMuxer.Muxer({
+		target: new WebMMuxer.ArrayBufferTarget(),
 		video: {
 			codec: 'V_VP9',
 			width: canvas.width,
@@ -54,7 +54,7 @@ const startRecording = async () => {
 			sampleRate: audioSampleRate,
 			numberOfChannels: 1
 		} : undefined,
-		firstTimestampBehavior: 'offset' // Because we're directly pumping a MediaStreamTrack's data into it
+		firstTimestampBehavior: 'offset' // Because we're directly piping a MediaStreamTrack's data into it
 	});
 
 	videoEncoder = new VideoEncoder({
@@ -128,8 +128,9 @@ const endRecording = async () => {
 
 	await videoEncoder?.flush();
 	await audioEncoder?.flush();
-	let buffer = muxer.finalize();
+	muxer.finalize();
 
+	let { buffer } = muxer.target;
 	downloadBlob(new Blob([buffer]));
 
 	videoEncoder = null;

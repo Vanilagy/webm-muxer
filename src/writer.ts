@@ -1,11 +1,11 @@
-import { EBML, EBMLFloat32, EBMLFloat64, measureEBMLVarInt, measureUnsignedInt } from "./ebml";
+import { EBML, EBMLFloat32, EBMLFloat64, measureEBMLVarInt, measureUnsignedInt } from './ebml';
+import { ArrayBufferTarget, FileSystemWritableFileStreamTarget, StreamTarget } from './target';
 
-/**
- * A WriteTarget defines a generic target to which data (bytes) can be written in a simple manner. It provides utility
- * methods for writing EBML-based data (the format Matroska or its subset, WebM, uses).
- */
-export abstract class WriteTarget {
+export abstract class Writer {
 	pos = 0;
+	#helper = new Uint8Array(8);
+	#helperView = new DataView(this.#helper.buffer);
+
 	/**
 	 * Stores the position from the start of the file to where EBML elements have been written. This is used to
 	 * rewrite/edit elements that were already added before, and to measure sizes of things.
@@ -14,11 +14,10 @@ export abstract class WriteTarget {
 	/** Same as offsets, but stores position where the element's data starts (after ID and size fields). */
 	dataOffsets = new WeakMap<EBML, number>();
 
-	#helper = new Uint8Array(8);
-	#helperView = new DataView(this.#helper.buffer);
-
 	/** Writes the given data to the target, at the current position. */
 	abstract write(data: Uint8Array): void;
+	/** Called after muxing has finished. */
+	abstract finalize(): void;
 
 	/** Sets the current position for future writes to a new one. */
 	seek(newPos: number) {
@@ -177,16 +176,22 @@ export abstract class WriteTarget {
 	}
 }
 
-/** A simple WriteTarget where all data is written into a dynamically-growing buffer in memory. */
-export class ArrayBufferWriteTarget extends WriteTarget {
+/**
+ * Writes to an ArrayBufferTarget. Maintains a growable internal buffer during the muxing process, which will then be
+ * written to the ArrayBufferTarget once the muxing finishes.
+ */
+export class ArrayBufferTargetWriter extends Writer {
+	#target: ArrayBufferTarget;
 	#buffer = new ArrayBuffer(2**16);
 	#bytes = new Uint8Array(this.#buffer);
 
-	constructor() {
+	constructor(target: ArrayBufferTarget) {
 		super();
+
+		this.#target = target;
 	}
 
-	ensureSize(size: number) {
+	#ensureSize(size: number) {
 		let newLength = this.#buffer.byteLength;
 		while (newLength < size) newLength *= 2;
 
@@ -201,178 +206,36 @@ export class ArrayBufferWriteTarget extends WriteTarget {
 	}
 
 	write(data: Uint8Array) {
-		this.ensureSize(this.pos + data.byteLength);
+		this.#ensureSize(this.pos + data.byteLength);
 
 		this.#bytes.set(data, this.pos);
 		this.pos += data.byteLength;
 	}
 
 	finalize() {
-		this.ensureSize(this.pos);
-		return this.#buffer.slice(0, this.pos);
+		this.#ensureSize(this.pos);
+		this.#target.buffer = this.#buffer.slice(0, this.pos);
 	}
-}
-
-const FILE_CHUNK_SIZE = 2**24;
-const MAX_CHUNKS_AT_ONCE = 2;
-
-interface FileChunk {
-	start: number,
-	written: FileChunkSection[],
-	data: Uint8Array,
-	shouldFlush: boolean
-}
-
-interface FileChunkSection {
-	start: number,
-	end: number
 }
 
 /**
- * A WriteTarget which writes directly to a file on disk, using the FileSystemWritableFileStream provided by the
- * amazing File System Access API. It minimizes actual writes to disk by caching chunks of data in RAM and then flushing
- * only large chunks of data to disk periodically.
+ * Writes to a StreamTarget every time it is flushed, sending out all of the new data written since the
+ * last flush. This is useful for streaming applications, like piping the output to disk.
  */
-export class FileSystemWritableFileStreamWriteTarget extends WriteTarget {
-	#stream: FileSystemWritableFileStream;
-	/**
-	 * The file is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed to disk.
-	 * A chunk is flushed to disk if all of its contents have been written.
-	 */
-	#chunks: FileChunk[] = [];
-
-	constructor(stream: FileSystemWritableFileStream) {
-		super();
-
-		this.#stream = stream;
-	}
-
-	write(data: Uint8Array) {
-		this.writeDataIntoChunks(data, this.pos);
-		this.flushChunks();
-
-		this.pos += data.byteLength;
-	}
-
-	writeDataIntoChunks(data: Uint8Array, position: number) {
-		// First, find the chunk to write the data into, or create one if none exists
-		let chunkIndex = this.#chunks.findIndex(x => x.start <= position && position < x.start + FILE_CHUNK_SIZE);
-		if (chunkIndex === -1) chunkIndex = this.createChunk(position);
-		let chunk = this.#chunks[chunkIndex];
-
-		// Figure out how much to write to the chunk, and then write to the chunk
-		let relativePosition = position - chunk.start;
-		let toWrite = data.subarray(0, Math.min(FILE_CHUNK_SIZE - relativePosition, data.byteLength));
-		chunk.data.set(toWrite, relativePosition);
-
-		// Create a section describing the region of data that was just written to
-		let section: FileChunkSection = {
-			start: relativePosition,
-			end: relativePosition + toWrite.byteLength
-		};
-		insertSectionIntoFileChunk(chunk, section);
-
-		// Queue chunk for flushing to disk if it has been fully written to
-		if (chunk.written[0].start === 0 && chunk.written[0].end === FILE_CHUNK_SIZE) {
-			chunk.shouldFlush = true;
-		}
-
-		// Make sure we don't hold too many chunks in memory at once to keep memory usage down
-		if (this.#chunks.length > MAX_CHUNKS_AT_ONCE) {
-			// Flush all but the last chunk
-			for (let i = 0; i < this.#chunks.length-1; i++) {
-				this.#chunks[i].shouldFlush = true;
-			}
-			this.flushChunks();
-		}
-
-		// If the data didn't fit in one chunk, recurse with the remaining datas
-		if (toWrite.byteLength < data.byteLength) {
-			this.writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
-		}
-	}
-
-	createChunk(includesPosition: number) {
-		let start = Math.floor(includesPosition / FILE_CHUNK_SIZE) * FILE_CHUNK_SIZE;
-		let chunk: FileChunk = {
-			start,
-			data: new Uint8Array(FILE_CHUNK_SIZE),
-			written: [],
-			shouldFlush: false
-		};
-		this.#chunks.push(chunk);
-		this.#chunks.sort((a, b) => a.start - b.start);
-
-		return this.#chunks.indexOf(chunk);
-	}
-
-	flushChunks(force = false) {
-		for (let i = 0; i < this.#chunks.length; i++) {
-			let chunk = this.#chunks[i];
-			if (!chunk.shouldFlush && !force) continue;
-
-			for (let section of chunk.written) {
-				this.#stream.write({
-					type: 'write',
-					data: chunk.data.subarray(section.start, section.end),
-					position: chunk.start + section.start
-				});
-			}
-			this.#chunks.splice(i--, 1);
-		}
-	}
-
-	finalize() {
-		this.flushChunks(true);
-	}
-}
-
-const insertSectionIntoFileChunk = (chunk: FileChunk, section: FileChunkSection) => {
-	let low = 0;
-	let high = chunk.written.length - 1;
-	let index = -1;
-
-	// Do a binary search to find the last section with a start not larger than `section`'s start
-	while (low <= high) {
-		let mid = Math.floor(low + (high - low + 1) / 2);
-
-		if (chunk.written[mid].start <= section.start) {
-			low = mid + 1;
-			index = mid;
-		} else {
-			high = mid - 1;
-		}
-	}
-
-	// Insert the new section
-	chunk.written.splice(index + 1, 0, section);
-	if (index === -1 || chunk.written[index].end < section.start) index++;
-
-	// Merge overlapping sections
-	while (index < chunk.written.length - 1 && chunk.written[index].end >= chunk.written[index + 1].start) {
-		chunk.written[index].end = Math.max(chunk.written[index].end, chunk.written[index + 1].end);
-		chunk.written.splice(index + 1, 1);
-	}
-};
-
-/**
- * This WriteTarget will fire a callback every time it is flushed, sending out all of the new data written since the
- * last flush. This is useful for streaming applications.
- */
-export class StreamingWriteTarget extends WriteTarget {
+export class StreamTargetWriter extends Writer {
+	#target: StreamTarget;
 	#sections: {
 		data: Uint8Array,
 		start: number
 	}[] = [];
-	#onFlush: (data: Uint8Array, offset: number, done: boolean) => void;
 
 	#lastFlushEnd = 0;
 	#ensureMonotonicity: boolean;
 
-	constructor(onFlush: (data: Uint8Array, offset: number, done: boolean) => void, ensureMonotonicity: boolean) {
+	constructor(target: StreamTarget, ensureMonotonicity: boolean) {
 		super();
 
-		this.#onFlush = onFlush;
+		this.#target = target;
 		this.#ensureMonotonicity = ensureMonotonicity;
 	}
 
@@ -384,7 +247,7 @@ export class StreamingWriteTarget extends WriteTarget {
 		this.pos += data.byteLength;
 	}
 
-	flush(done: boolean) {
+	flush() {
 		if (this.#sections.length === 0) return;
 
 		let chunks: {
@@ -426,14 +289,183 @@ export class StreamingWriteTarget extends WriteTarget {
 			}
 
 			if (this.#ensureMonotonicity && chunk.start < this.#lastFlushEnd) {
-				throw new Error("Internal error: Monotonicity violation.");
+				throw new Error('Internal error: Monotonicity violation.');
 			}
 
-			let isLastFlush = done && chunk === chunks[chunks.length - 1];
-			this.#onFlush(chunk.data, chunk.start, isLastFlush);
+			this.#target.onData(chunk.data, chunk.start);
 			this.#lastFlushEnd = chunk.start + chunk.data.byteLength;
 		}
 
 		this.#sections.length = 0;
+	}
+
+	finalize() {
+		this.#target.onDone?.();
+	}
+}
+
+const CHUNK_SIZE = 2**24;
+const MAX_CHUNKS_AT_ONCE = 2;
+
+interface Chunk {
+	start: number,
+	written: ChunkSection[],
+	data: Uint8Array,
+	shouldFlush: boolean
+}
+
+interface ChunkSection {
+	start: number,
+	end: number
+}
+
+/**
+ * Writes to a StreamTarget using a chunked approach: Data is first buffered in memory until it reaches a large enough
+ * size, which is when it is piped to the StreamTarget. This is helpful for reducing the total amount of writes.
+ */
+export class ChunkedStreamTargetWriter extends Writer {
+	#target: StreamTarget;
+	/**
+	 * The data is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed out.
+	 * A chunk is flushed if all of its contents have been written.
+	 */
+	#chunks: Chunk[] = [];
+
+	#lastFlushEnd = 0;
+	#ensureMonotonicity: boolean;
+
+	constructor(target: StreamTarget, ensureMonotonicity: boolean) {
+		super();
+
+		this.#target = target;
+		this.#ensureMonotonicity = ensureMonotonicity;
+	}
+
+	write(data: Uint8Array) {
+		this.#writeDataIntoChunks(data, this.pos);
+		this.#flushChunks();
+
+		this.pos += data.byteLength;
+	}
+
+	#writeDataIntoChunks(data: Uint8Array, position: number) {
+		// First, find the chunk to write the data into, or create one if none exists
+		let chunkIndex = this.#chunks.findIndex(x => x.start <= position && position < x.start + CHUNK_SIZE);
+		if (chunkIndex === -1) chunkIndex = this.#createChunk(position);
+		let chunk = this.#chunks[chunkIndex];
+
+		// Figure out how much to write to the chunk, and then write to the chunk
+		let relativePosition = position - chunk.start;
+		let toWrite = data.subarray(0, Math.min(CHUNK_SIZE - relativePosition, data.byteLength));
+		chunk.data.set(toWrite, relativePosition);
+
+		// Create a section describing the region of data that was just written to
+		let section: ChunkSection = {
+			start: relativePosition,
+			end: relativePosition + toWrite.byteLength
+		};
+		this.#insertSectionIntoChunk(chunk, section);
+
+		// Queue chunk for flushing to target if it has been fully written to
+		if (chunk.written[0].start === 0 && chunk.written[0].end === CHUNK_SIZE) {
+			chunk.shouldFlush = true;
+		}
+
+		// Make sure we don't hold too many chunks in memory at once to keep memory usage down
+		if (this.#chunks.length > MAX_CHUNKS_AT_ONCE) {
+			// Flush all but the last chunk
+			for (let i = 0; i < this.#chunks.length-1; i++) {
+				this.#chunks[i].shouldFlush = true;
+			}
+			this.#flushChunks();
+		}
+
+		// If the data didn't fit in one chunk, recurse with the remaining datas
+		if (toWrite.byteLength < data.byteLength) {
+			this.#writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
+		}
+	}
+
+	#insertSectionIntoChunk(chunk: Chunk, section: ChunkSection) {
+		let low = 0;
+		let high = chunk.written.length - 1;
+		let index = -1;
+
+		// Do a binary search to find the last section with a start not larger than `section`'s start
+		while (low <= high) {
+			let mid = Math.floor(low + (high - low + 1) / 2);
+
+			if (chunk.written[mid].start <= section.start) {
+				low = mid + 1;
+				index = mid;
+			} else {
+				high = mid - 1;
+			}
+		}
+
+		// Insert the new section
+		chunk.written.splice(index + 1, 0, section);
+		if (index === -1 || chunk.written[index].end < section.start) index++;
+
+		// Merge overlapping sections
+		while (index < chunk.written.length - 1 && chunk.written[index].end >= chunk.written[index + 1].start) {
+			chunk.written[index].end = Math.max(chunk.written[index].end, chunk.written[index + 1].end);
+			chunk.written.splice(index + 1, 1);
+		}
+	}
+
+	#createChunk(includesPosition: number) {
+		let start = Math.floor(includesPosition / CHUNK_SIZE) * CHUNK_SIZE;
+		let chunk: Chunk = {
+			start,
+			data: new Uint8Array(CHUNK_SIZE),
+			written: [],
+			shouldFlush: false
+		};
+		this.#chunks.push(chunk);
+		this.#chunks.sort((a, b) => a.start - b.start);
+
+		return this.#chunks.indexOf(chunk);
+	}
+
+	#flushChunks(force = false) {
+		for (let i = 0; i < this.#chunks.length; i++) {
+			let chunk = this.#chunks[i];
+			if (!chunk.shouldFlush && !force) continue;
+
+			for (let section of chunk.written) {
+				if (this.#ensureMonotonicity && chunk.start + section.start < this.#lastFlushEnd) {
+					throw new Error('Internal error: Monotonicity violation.');
+				}
+
+				this.#target.onData(
+					chunk.data.subarray(section.start, section.end),
+					chunk.start + section.start
+				);
+				this.#lastFlushEnd = chunk.start + section.end;
+			}
+			this.#chunks.splice(i--, 1);
+		}
+	}
+
+	finalize() {
+		this.#flushChunks(true);
+		this.#target.onDone?.();
+	}
+}
+
+/**
+ * Essentially a wrapper around ChunkedStreamTargetWriter, writing directly to disk using the File System Access API.
+ * This is useful for large files, as available RAM is no longer a bottleneck.
+ */
+export class FileSystemWritableFileStreamTargetWriter extends ChunkedStreamTargetWriter {
+	constructor(target: FileSystemWritableFileStreamTarget, ensureMonotonicity: boolean) {
+		super(new StreamTarget(
+			(data, position) => target.stream.write({
+				type: 'write',
+				data,
+				position
+			})
+		), ensureMonotonicity);
 	}
 }

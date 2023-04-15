@@ -1,24 +1,11 @@
 /**
- * Describes the properties used to configure an instance of `WebMMuxer`.
+ * Describes the properties used to configure an instance of `Muxer`.
  */
-declare interface WebMMuxerOptions {
+declare interface MuxerOptions<T extends Target> {
 	/**
-	 * Specifies where the muxed WebM file is written to.
-	 *
-	 * When using `'buffer'`, the muxed file is simply written to a buffer in memory, which is then returned by the
-	 * muxer's `finalize` method.
-	 *
-	 * If the target is a function, it will be called each time data is output by the muxer - this is useful if you want
-	 * to stream the data. The function will be called with three arguments: the data to write, the offset in bytes at
-	 * which to write the data and a boolean indicating whether the muxer is done writing data. Note that the same
-	 * segment of bytes might be written to multiple times and therefore you need to write the data in the same order
-	 * the function gave it to you.
-	 *
-	 * If the target is of type `FileSystemWritableFileStream`, the file will be written directly to disk as it is being
-	 * muxed. The benefit of this target is the ability to write out very large files, easily exceeding the RAM of the
-	 * machine being used.
+	 * Specifies what happens with the data created by the muxer.
 	 */
-	target: 'buffer' | ((data: Uint8Array, offset: number, done: boolean) => void) | FileSystemWritableFileStream,
+	target: T,
 
 	/**
 	 * When set, declares the existence of a video track in the WebM file and configures that video track.
@@ -102,73 +89,115 @@ declare interface WebMMuxerOptions {
 	firstTimestampBehavior?: 'strict' | 'offset' | 'permissive'
 }
 
-declare global {
-	/**
-	 * Used to multiplex video and audio chunks into a single WebM file. For each WebM file you want to create, create
-	 * one instance of `WebMMuxer`.
-	 */
-	class WebMMuxer {
-		/**
-		 * Creates a new instance of `WebMMuxer`.
-		 * @param options Specifies configuration and metadata for the WebM file.
-		 */
-		constructor(options: WebMMuxerOptions);
+declare type Target = ArrayBufferTarget | StreamTarget | FileSystemWritableFileStreamTarget;
 
-		/**
-		 * Adds a new, encoded video chunk to the WebM file.
-		 * @param chunk The encoded video chunk. Can be obtained through a `VideoEncoder`.
-		 * @param meta The metadata about the encoded video, also provided by `VideoEncoder`.
-		 * @param timestamp Optionally, the timestamp to use for the video chunk. When not provided, it will use the one
-		 * specified in `chunk`.
-		 */
-		addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number): void;
-		/**
-		 * Adds a new, encoded audio chunk to the WebM file.
-		 * @param chunk The encoded audio chunk. Can be obtained through an `AudioEncoder`.
-		 * @param meta The metadata about the encoded audio, also provided by `AudioEncoder`.
-		 * @param timestamp Optionally, the timestamp to use for the audio chunk. When not provided, it will use the one
-		 * specified in `chunk`.
-		 */
-		addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number): void;
-
-		/**
-		 * Adds a raw video chunk to the WebM file. This method should be used when the encoded video is not obtained
-		 * through a `VideoEncoder` but through some other means, where no instance of `EncodedVideoChunk`is available.
-		 * @param data The raw data of the video chunk.
-		 * @param type Whether the video chunk is a keyframe or delta frame.
-		 * @param timestamp The timestamp of the video chunk.
-		 * @param meta Optionally, any encoder metadata.
-		 */
-		addVideoChunkRaw(
-			data: Uint8Array,
-			type: 'key' | 'delta',
-			timestamp: number,
-			meta?: EncodedVideoChunkMetadata
-		): void;
-		/**
-		 * Adds a raw audio chunk to the WebM file. This method should be used when the encoded audio is not obtained
-		 * through an `AudioEncoder` but through some other means, where no instance of `EncodedAudioChunk`is available.
-		 * @param data The raw data of the audio chunk.
-		 * @param type Whether the audio chunk is a keyframe or delta frame.
-		 * @param timestamp The timestamp of the audio chunk.
-		 * @param meta Optionally, any encoder metadata.
-		 */
-		addAudioChunkRaw(
-			data: Uint8Array,
-			type: 'key' | 'delta',
-			timestamp: number,
-			meta?: EncodedAudioChunkMetadata
-		): void;
-
-		/**
-		 * Is to be called after all media chunks have been added to the muxer. Make sure to call and await the `flush`
-		 * method on your `VideoEncoder` and/or `AudioEncoder` before calling this method to ensure all encoding has
-		 * finished. This method will then finish up the writing process of the WebM file.
-		 * @returns Should you have used `target: 'buffer'` in the configuration options, this method will return the
-		 * buffer containing the final WebM file.
-		 */
-		finalize(): ArrayBuffer | null;
-	}
+/** The file data will be written into a single large buffer, which is then stored in `buffer`. */
+declare class ArrayBufferTarget {
+	buffer: ArrayBuffer;
 }
 
-export = WebMMuxer;
+/**
+ * This target defines callbacks that will get called whenever there is new data available  - this is useful if
+ * you want to stream the data, e.g. pipe it somewhere else.
+ *
+ * When using `chunked: true` in the options, data created by the muxer will first be accumulated and only written out
+ * once it has reached sufficient size (~16 MB). This is useful for reducing the total amount of writes, at the cost of
+ * latency.
+ */
+declare class StreamTarget {
+	constructor(
+		onData: (data: Uint8Array, position: number) => void,
+		onDone?: () => void,
+		options?: { chunked?: true }
+	);
+}
+
+/**
+ * This is essentially a wrapper around `StreamTarget` with the intention of simplifying the use of this library with
+ * the File System Access API. Writing the file directly to disk as it's being created comes with many benefits, such as
+ * creating files way larger than the available RAM.
+ */
+declare class FileSystemWritableFileStreamTarget {
+	constructor(stream: FileSystemWritableFileStream);
+}
+
+/**
+ * Used to multiplex video and audio chunks into a single WebM file. For each WebM file you want to create, create
+ * one instance of `Muxer`.
+ */
+declare class Muxer<T extends Target> {
+	target: T;
+
+	/**
+	 * Creates a new instance of `Muxer`.
+	 * @param options Specifies configuration and metadata for the WebM file.
+	 */
+	constructor(options: MuxerOptions<T>);
+
+	/**
+	 * Adds a new, encoded video chunk to the WebM file.
+	 * @param chunk The encoded video chunk. Can be obtained through a `VideoEncoder`.
+	 * @param meta The metadata about the encoded video, also provided by `VideoEncoder`.
+	 * @param timestamp Optionally, the timestamp to use for the video chunk. When not provided, it will use the one
+	 * specified in `chunk`.
+	 */
+	addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number): void;
+	/**
+	 * Adds a new, encoded audio chunk to the WebM file.
+	 * @param chunk The encoded audio chunk. Can be obtained through an `AudioEncoder`.
+	 * @param meta The metadata about the encoded audio, also provided by `AudioEncoder`.
+	 * @param timestamp Optionally, the timestamp to use for the audio chunk. When not provided, it will use the one
+	 * specified in `chunk`.
+	 */
+	addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number): void;
+
+	/**
+	 * Adds a raw video chunk to the WebM file. This method should be used when the encoded video is not obtained
+	 * through a `VideoEncoder` but through some other means, where no instance of `EncodedVideoChunk`is available.
+	 * @param data The raw data of the video chunk.
+	 * @param type Whether the video chunk is a keyframe or delta frame.
+	 * @param timestamp The timestamp of the video chunk.
+	 * @param meta Optionally, any encoder metadata.
+	 */
+	addVideoChunkRaw(
+		data: Uint8Array,
+		type: 'key' | 'delta',
+		timestamp: number,
+		meta?: EncodedVideoChunkMetadata
+	): void;
+	/**
+	 * Adds a raw audio chunk to the WebM file. This method should be used when the encoded audio is not obtained
+	 * through an `AudioEncoder` but through some other means, where no instance of `EncodedAudioChunk`is available.
+	 * @param data The raw data of the audio chunk.
+	 * @param type Whether the audio chunk is a keyframe or delta frame.
+	 * @param timestamp The timestamp of the audio chunk.
+	 * @param meta Optionally, any encoder metadata.
+	 */
+	addAudioChunkRaw(
+		data: Uint8Array,
+		type: 'key' | 'delta',
+		timestamp: number,
+		meta?: EncodedAudioChunkMetadata
+	): void;
+
+	/**
+	 * Is to be called after all media chunks have been added to the muxer. Make sure to call and await the `flush`
+	 * method on your `VideoEncoder` and/or `AudioEncoder` before calling this method to ensure all encoding has
+	 * finished. This method will then finish up the writing process of the WebM file.
+	 * @returns Should you have used `target: 'buffer'` in the configuration options, this method will return the
+	 * buffer containing the final WebM file.
+	 */
+	finalize(): ArrayBuffer | null;
+}
+
+declare namespace WebMMuxer {
+	export { Muxer, ArrayBufferTarget, StreamTarget, FileSystemWritableFileStreamTarget };
+}
+
+declare global {
+	let WebMMuxer: typeof WebMMuxer;
+}
+
+export { Muxer, ArrayBufferTarget, StreamTarget, FileSystemWritableFileStreamTarget };
+export as namespace WebMMuxer;
+export default WebMMuxer;
