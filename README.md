@@ -142,7 +142,9 @@ This option specifies where the data created by the muxer will be written. The o
     `chunked: true` in the options, data created by the muxer will first be accumulated and only written out once it has
     reached sufficient size (~16 MB). This is useful for reducing the total amount of writes, at the cost of latency.
     
-    Note that this target is **not** intended for *live-streaming*, i.e. playback before muxing has finished.
+    If you want to use this target for *live-streaming*, make sure to also set `streaming: true` in the muxer options.
+    This will ensure that data is written monotonically and already-written data is never "patched" - necessary for
+    live-streaming, but not recommended for muxing files for later viewing.
 
     ```js
     import { Muxer, StreamTarget } from 'webm-muxer';
