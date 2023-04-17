@@ -238,14 +238,14 @@ methods to directly send your raw data to the muxer:
 addVideoChunkRaw(
     data: Uint8Array,
     type: 'key' | 'delta',
-    timestamp: number,
+    timestamp: number, // In microseconds
     meta?: EncodedVideoChunkMetadata
 ): void;
 
 addAudioChunkRaw(
     data: Uint8Array,
     type: 'key' | 'delta',
-    timestamp: number,
+    timestamp: number, // In microseconds
     meta?: EncodedAudioChunkMetadata
 ): void;
 ```
