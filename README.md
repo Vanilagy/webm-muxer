@@ -11,7 +11,8 @@ high-quality, fast and tiny, and supports both video and audio as well as live-s
 
 [Demo: Streaming](https://vanilagy.github.io/webm-muxer/demo-streaming/)
 
-> **Note:** If you're looking to create **MP4** files, check out [mp4-muxer](https://github.com/Vanilagy/mp4-muxer), the sister library to webm-muxer.
+> **Note:** If you're looking to create **MP4** files, check out [mp4-muxer](https://github.com/Vanilagy/mp4-muxer), the
+sister library to webm-muxer.
 
 ## Quick start
 The following is an example for a common usage of this library:
@@ -127,24 +128,28 @@ This option specifies where the data created by the muxer will be written. The o
     muxer.finalize();
     let { buffer } = muxer.target;
     ```
-- `StreamTarget`: This target defines callbacks that will get called whenever there is new data available  - this is useful if
-    you want to stream the data, e.g. pipe it somewhere else. The constructor has the following signature:
+- `StreamTarget`: This target defines callbacks that will get called whenever there is new data available  - this is
+    useful if you want to stream the data, e.g. pipe it somewhere else. The constructor has the following signature:
 
     ```ts
     constructor(
         onData: (data: Uint8Array, position: number) => void,
         onDone?: () => void,
-        options?: { chunked?: true }
+        options?: { chunked?: true, chunkSize?: number }
     );
     ```
 
-    The `position` parameter specifies the offset in bytes at which the data should be written. When using
-    `chunked: true` in the options, data created by the muxer will first be accumulated and only written out once it has
-    reached sufficient size (~16 MB). This is useful for reducing the total amount of writes, at the cost of latency.
+    The `position` argument specifies the offset in bytes at which the data has to be written. Since the data written by
+    the muxer is not entirely sequential, **make sure to respect this argument**.
+    
+    When using `chunked: true` in the options, data created by the muxer will first be accumulated and only written out
+    once it has reached sufficient size. This is useful for reducing the total amount of writes, at the cost of
+    latency. It using a default chunk size of 16 MiB, which can be overridden by manually setting `chunkSize` to the
+    desired byte length.
     
     If you want to use this target for *live-streaming*, make sure to also set `streaming: true` in the muxer options.
-    This will ensure that data is written monotonically and already-written data is never "patched" - necessary for
-    live-streaming, but not recommended for muxing files for later viewing.
+    This will ensure that data is written monotonically (sequentially) and already-written data is never "patched" -
+    necessary for live-streaming, but not recommended for muxing files for later viewing.
 
     ```js
     import { Muxer, StreamTarget } from 'webm-muxer';
@@ -157,10 +162,19 @@ This option specifies where the data created by the muxer will be written. The o
         // ...
     });
     ```
-- `FileSystemWritableFileStreamTarget`: This is essentially a wrapper around `StreamTarget` with the intention of
-    simplifying the use of this library with the File System Access API. Writing the file directly to disk as it's being
-    created comes with many benefits, such as creating files way larger than the available RAM.
+- `FileSystemWritableFileStreamTarget`: This is essentially a wrapper around a chunked `StreamTarget` with the intention
+    of simplifying the use of this library with the File System Access API. Writing the file directly to disk as it's
+    being created comes with many benefits, such as creating files way larger than the available RAM.
 
+    You can optionally override the default `chunkSize` of 16 MiB.
+    ```ts
+    constructor(
+        stream: FileSystemWritableFileStream,
+        options?: { chunkSize?: number }
+    );
+    ```
+
+    Usage example:
     ```js
     import { Muxer, FileSystemWritableFileStreamTarget } from 'webm-muxer';
     
