@@ -91,7 +91,7 @@ declare interface MuxerOptions<T extends Target> {
 
 declare type Target = ArrayBufferTarget | StreamTarget | FileSystemWritableFileStreamTarget;
 
-/** The file data will be written into a single large buffer, which is then stored in `buffer`. */
+/** The file data will be written into a single large buffer, which is then stored in `buffer` upon finalization. */
 declare class ArrayBufferTarget {
 	buffer: ArrayBuffer;
 }
@@ -187,10 +187,8 @@ declare class Muxer<T extends Target> {
 	 * Is to be called after all media chunks have been added to the muxer. Make sure to call and await the `flush`
 	 * method on your `VideoEncoder` and/or `AudioEncoder` before calling this method to ensure all encoding has
 	 * finished. This method will then finish up the writing process of the WebM file.
-	 * @returns Should you have used `target: 'buffer'` in the configuration options, this method will return the
-	 * buffer containing the final WebM file.
 	 */
-	finalize(): ArrayBuffer | null;
+	finalize(): void;
 }
 
 declare namespace WebMMuxer {
