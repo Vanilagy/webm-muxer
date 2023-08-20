@@ -1,10 +1,23 @@
 {
   "name": "webm-muxer",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "WebM multiplexer in pure TypeScript with support for WebCodecs API, video & audio.",
   "main": "./build/webm-muxer.js",
+  "module": "./build/webm-muxer.mjs",
   "types": "./build/webm-muxer.d.ts",
-  "files": ["README.md", "package.json", "LICENSE", "build/webm-muxer.js", "build/webm-muxer.d.ts"],
+  "exports": {
+    "types": "./build/webm-muxer.d.ts",
+    "import": "./build/webm-muxer.mjs",
+    "require": "./build/webm-muxer.js"
+  },
+  "files": [
+    "README.md",
+    "package.json",
+    "LICENSE",
+    "build/webm-muxer.js",
+    "build/webm-muxer.mjs",
+    "build/webm-muxer.d.ts"
+  ],
   "scripts": {
     "watch": "node build.js",
     "check": "npx tsc --noEmit --skipLibCheck",

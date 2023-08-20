@@ -1075,9 +1075,4 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
   };
   return __toCommonJS(src_exports);
 })();
-if (typeof module === "object" && typeof module.exports === "object") {
-	module.exports.Muxer = WebMMuxer.Muxer;
-	module.exports.ArrayBufferTarget = WebMMuxer.ArrayBufferTarget;
-	module.exports.StreamTarget = WebMMuxer.StreamTarget;
-	module.exports.FileSystemWritableFileStreamTarget = WebMMuxer.FileSystemWritableFileStreamTarget;
-}
+if (typeof module === "object" && typeof module.exports === "object") Object.assign(module.exports, WebMMuxer)

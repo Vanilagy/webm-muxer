@@ -295,7 +295,7 @@ export class Muxer<T extends Target> {
 		return this.#writer.dataOffsets.get(this.#segment);
 	}
 
-	addVideoChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata, timestamp?: number) {
+	addVideoChunk(chunk: EncodedVideoChunk, meta?: EncodedVideoChunkMetadata, timestamp?: number) {
 		let data = new Uint8Array(chunk.byteLength);
 		chunk.copyTo(data);
 
@@ -420,7 +420,7 @@ export class Muxer<T extends Target> {
 		writeBits(chunk.data, i+0, i+3, colorSpaceID);
 	}
 
-	addAudioChunk(chunk: EncodedAudioChunk, meta: EncodedAudioChunkMetadata, timestamp?: number) {
+	addAudioChunk(chunk: EncodedAudioChunk, meta?: EncodedAudioChunkMetadata, timestamp?: number) {
 		let data = new Uint8Array(chunk.byteLength);
 		chunk.copyTo(data);
 
