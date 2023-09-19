@@ -3,7 +3,6 @@ const esbuild = require('esbuild');
 const baseConfig = {
 	entryPoints: ['src/index.ts'],
 	bundle: true,
-	outfile: 'build/webm-muxer.js',
 	logLevel: 'info',
 	watch: true
 };
