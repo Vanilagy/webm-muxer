@@ -17,15 +17,15 @@ declare interface MuxerOptions<T extends Target> {
 		 */
 		codec: string,
 		/**
-		 * The width of the video, in pixels.
+		 * The width of the video in pixels.
 		 */
 		width: number,
 		/**
-		 * The height of the video, in pixels.
+		 * The height of the video in pixels.
 		 */
 		height: number,
 		/**
-		 * The frame rate of the video, in frames per second. This property is optional and usually used for metadata
+		 * The frame rate of the video in frames per second. This property is optional and usually used for metadata
 		 * only.
 		 */
 		frameRate?: number,
@@ -49,7 +49,7 @@ declare interface MuxerOptions<T extends Target> {
 		 */
 		numberOfChannels: number,
 		/**
-		 * The sample rate in the audio rate, in samples per second per channel.
+		 * The sample rate of the audio track in samples per second per channel.
 		 */
 		sampleRate: number,
 		/**
