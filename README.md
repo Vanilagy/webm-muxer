@@ -310,7 +310,7 @@ they can be added to the muxer. To do this, this library exports its own `Subtit
 API. Currently, it only supports encoding WebVTT files.
 
 Here's a full example using subtitles:
-```ts
+```js
 import { Muxer, SubtitleEncoder, ArrayBufferTarget } from 'webm-muxer';
 
 let muxer = new Muxer({
