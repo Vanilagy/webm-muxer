@@ -5,7 +5,7 @@
 
 The WebCodecs API provides low-level access to media codecs, but provides no way of actually packaging (multiplexing)
 the encoded media into a playable file. This project implements a WebM/Matroska multiplexer in pure TypeScript, which is
-high-quality, fast and tiny, and supports both video and audio as well as live-streaming.
+high-quality, fast and tiny, and supports video, audio and subtitles as well as live-streaming.
 
 [Demo: Muxing into a file](https://vanilagy.github.io/webm-muxer/demo/)
 
@@ -103,6 +103,10 @@ interface MuxerOptions {
         bitDepth?: number // Mainly necessary for PCM-coded audio
     },
 
+    subtitles?: {
+        codec: string
+    },
+
     streaming?: boolean,
 
     type?: 'webm' | 'matroska',
@@ -110,7 +114,10 @@ interface MuxerOptions {
     firstTimestampBehavior?: 'strict' | 'offset' | 'permissive'
 }
 ```
-Codecs officially supported by WebM are `V_VP8`, `V_VP9`, `V_AV1`, `A_OPUS` and `A_VORBIS`.
+Codecs officially supported by WebM are:\
+**Video:** `V_VP8`, `V_VP9`, `V_AV1`\
+**Audio:** `A_OPUS`, `A_VORBIS`\
+**Subtitles:** `S_TEXT/WEBVTT`
 #### `target`
 This option specifies where the data created by the muxer will be written. The options are:
 - `ArrayBufferTarget`: The file data will be written into a single large buffer, which is then stored in the target.
@@ -296,6 +303,47 @@ your video frames and then encode the audio afterwards, the multiplexer will hav
 memory until the audio chunks start coming in. This might lead to memory exhaustion should your video be very long.
 When there is only one media track, this issue does not arise. So, when muxing a multimedia file, make sure it is
 somewhat limited in size or the chunks are encoded in a somewhat interleaved way (like is the case for live media).
+
+### Subtitles
+This library supports adding a subtitle track to a file. Like video and audio, subtitles also need to be encoded before
+they can be added to the muxer. To do this, this library exports its own `SubtitleEncoder` class with a WebCodecs-like
+API. Currently, it only supports encoding WebVTT files.
+
+Here's a full example using subtitles:
+```ts
+import { Muxer, SubtitleEncoder, ArrayBufferTarget } from 'webm-muxer';
+
+let muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    subtitles: {
+        codec: 'S_TEXT/WEBVTT'
+    },
+    // ....
+});
+
+let subtitleEncoder = new SubtitleEncoder({
+    output: (chunk, meta) => muxer.addSubtitleChunk(chunk, meta),
+    error: e => console.error(e)
+});
+subtitleEncoder.configure({
+    codec: 'webvtt'
+});
+
+let simpleWebvttFile =
+`WEBVTT
+
+00:00:00.000 --> 00:00:10.000
+Example entry 1: Hello <b>world</b>.
+`;
+subtitleEncoder.encode(simpleWebvttFile);
+
+// ...
+
+muxer.finalize();
+```
+
+You do not need to encode an entire WebVTT file in one go; you can encode individual cues or any number of them at once.
+Just make sure that the preamble (the part before the first cue) is the first thing to be encoded.
 
 ### Size "limits"
 This library can mux WebM files up to a total size of ~4398 GB and with a Matroska Cluster size of ~34 GB.
