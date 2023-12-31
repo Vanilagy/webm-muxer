@@ -110,7 +110,7 @@ export class SubtitleEncoder {
 
 			let chunk: EncodedSubtitleChunk = {
 				body: textEncoder.encode(body),
-				additions: additions === '\n\n' ? undefined : textEncoder.encode(additions),
+				additions: additions.trim() === '' ? undefined : textEncoder.encode(additions),
 				timestamp: startTime * 1000,
 				duration: duration * 1000
 			};

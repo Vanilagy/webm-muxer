@@ -485,7 +485,7 @@ export class Muxer<T extends Target> {
 		this.#maybeFlushStreamingTargetWriter();
 	}
 
-	addSubtitleChunk(chunk: EncodedSubtitleChunk, meta: EncodedSubtitleChunkMetadata) {
+	addSubtitleChunk(chunk: EncodedSubtitleChunk, meta: EncodedSubtitleChunkMetadata, timestamp?: number) {
 		this.#ensureNotFinalized();
 		if (!this.#options.subtitles) throw new Error('No subtitle track declared.');
 
@@ -501,7 +501,7 @@ export class Muxer<T extends Target> {
 		let subtitleChunk = this.#createInternalChunk(
 			chunk.body,
 			'key',
-			chunk.timestamp,
+			timestamp ?? chunk.timestamp,
 			SUBTITLE_TRACK_NUMBER,
 			chunk.duration,
 			chunk.additions

@@ -184,6 +184,15 @@ declare class Muxer<T extends Target> {
 	): void;
 
 	/**
+	 * Adds a new, encoded subtitle chunk to the WebM file.
+	 * @param chunk The encoded subtitle chunk. Can be obtained through a `SubtitleEncoder`.
+	 * @param meta The metadata about the encoded subtitles, also provided by `SubtitleEncoder`.
+	 * @param timestamp Optionally, the timestamp to use for the subtitle chunk. When not provided, it will use the one
+	 * specified in `chunk`.
+	 */
+	addSubtitleChunk(chunk: EncodedSubtitleChunk, meta?: EncodedSubtitleChunkMetadata, timestamp?: number): void;
+
+	/**
 	 * Is to be called after all media chunks have been added to the muxer. Make sure to call and await the `flush`
 	 * method on your `VideoEncoder` and/or `AudioEncoder` before calling this method to ensure all encoding has
 	 * finished. This method will then finish up the writing process of the WebM file.
@@ -191,9 +200,70 @@ declare class Muxer<T extends Target> {
 	finalize(): void;
 }
 
+interface EncodedSubtitleChunk {
+	body: Uint8Array,
+	additional?: Uint8Array,
+	timestamp: number,
+	duration: number
+}
+
+interface EncodedSubtitleChunkMetadata {
+	decoderConfig?: {
+		description: Uint8Array
+	}
+}
+
+interface SubtitleEncoderOptions {
+	output: (chunk: EncodedSubtitleChunk, metadata: EncodedSubtitleChunkMetadata) => unknown,
+	error: (error: Error) => unknown
+}
+
+interface SubtitleEncoderConfig {
+	codec: 'webvtt'
+}
+
+/**
+ * The `SubtitleEncoder` class is responsible for encoding subtitle text into a specified format.
+ * It provides methods to configure the encoder and to encode the text.
+ */
+declare class SubtitleEncoder {
+	/**
+	 * Constructs a new `SubtitleEncoder` instance with the given options.
+	 * @param options The options for the subtitle encoder.
+	 */
+	constructor(options: SubtitleEncoderOptions);
+
+	/**
+	 * Configures the subtitle encoder with the specified configuration.
+	 * Currently, only 'webvtt' codec is supported.
+	 * @param config The configuration object for the subtitle encoder.
+	 * @throws Will throw an error if the codec is not 'webvtt'.
+	 */
+	configure(config: SubtitleEncoderConfig): void;
+
+	/**
+	 * Encodes the given text into the subtitle format specified in the configuration.
+	 * It processes the text, encodes it, and emits encoded subtitle chunks through the output callback.
+	 * @param text The subtitle text to be encoded.
+	 * @throws Will throw an error if the encoder is not configured or if there are any encoding errors.
+	 */
+	encode(text: string): void;
+}
+
 declare global {
 	let WebMMuxer: typeof WebMMuxer;
 }
 
-export { Muxer, ArrayBufferTarget, StreamTarget, FileSystemWritableFileStreamTarget };
+export {
+	Muxer,
+	ArrayBufferTarget,
+	StreamTarget,
+	FileSystemWritableFileStreamTarget,
+	SubtitleEncoder,
+	type MuxerOptions,
+	type EncodedSubtitleChunk,
+	type EncodedSubtitleChunkMetadata,
+	type SubtitleEncoderOptions,
+	type SubtitleEncoderConfig
+};
 export as namespace WebMMuxer;

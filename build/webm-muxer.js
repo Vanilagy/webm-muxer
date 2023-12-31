@@ -684,7 +684,7 @@ var WebMMuxer = (() => {
       __privateMethod(this, _writeSubtitleChunks, writeSubtitleChunks_fn).call(this);
       __privateMethod(this, _maybeFlushStreamingTargetWriter, maybeFlushStreamingTargetWriter_fn).call(this);
     }
-    addSubtitleChunk(chunk, meta) {
+    addSubtitleChunk(chunk, meta, timestamp) {
       __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
       if (!__privateGet(this, _options).subtitles)
         throw new Error("No subtitle track declared.");
@@ -695,7 +695,7 @@ var WebMMuxer = (() => {
           __privateMethod(this, _writeCodecPrivate, writeCodecPrivate_fn).call(this, __privateGet(this, _subtitleCodecPrivate), meta.decoderConfig.description);
         }
       }
-      let subtitleChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, chunk.body, "key", chunk.timestamp, SUBTITLE_TRACK_NUMBER, chunk.duration, chunk.additions);
+      let subtitleChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, chunk.body, "key", timestamp != null ? timestamp : chunk.timestamp, SUBTITLE_TRACK_NUMBER, chunk.duration, chunk.additions);
       __privateSet(this, _lastSubtitleTimestamp, subtitleChunk.timestamp);
       __privateGet(this, _subtitleChunkQueue).push(subtitleChunk);
       __privateMethod(this, _writeSubtitleChunks, writeSubtitleChunks_fn).call(this);
@@ -1240,7 +1240,7 @@ ${notes}`;
         cueBlockHeaderRegex.lastIndex = 0;
         let chunk = {
           body: textEncoder.encode(body),
-          additions: additions === "\n\n" ? void 0 : textEncoder.encode(additions),
+          additions: additions.trim() === "" ? void 0 : textEncoder.encode(additions),
           timestamp: startTime * 1e3,
           duration: duration * 1e3
         };
