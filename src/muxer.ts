@@ -4,6 +4,7 @@ import { ArrayBufferTarget, FileSystemWritableFileStreamTarget, StreamTarget, Ta
 import { EncodedSubtitleChunk, EncodedSubtitleChunkMetadata } from './subtitles';
 import {
 	ArrayBufferTargetWriter,
+	BaseStreamTargetWriter,
 	ChunkedStreamTargetWriter,
 	FileSystemWritableFileStreamTargetWriter,
 	StreamTargetWriter,
@@ -141,6 +142,10 @@ export class Muxer<T extends Target> {
 	}
 
 	#createFileHeader() {
+		if (this.#writer instanceof BaseStreamTargetWriter && this.#writer.target.options.onHeader) {
+			this.#writer.startTrackingWrites();
+		}
+
 		this.#writeEBMLHeader();
 
 		if (!this.#options.streaming) {
@@ -301,6 +306,11 @@ export class Muxer<T extends Target> {
 		this.#segment = segment;
 
 		this.#writer.writeEBML(segment);
+
+		if (this.#writer instanceof BaseStreamTargetWriter && this.#writer.target.options.onHeader) {
+			let { data, start } = this.#writer.getTrackedWrites(); // start should be 0
+			this.#writer.target.options.onHeader(data, start);
+		}
 	}
 
 	#createCues() {
@@ -702,6 +712,10 @@ export class Muxer<T extends Target> {
 			this.#finalizeCurrentCluster();
 		}
 
+		if (this.#writer instanceof BaseStreamTargetWriter && this.#writer.target.options.onCluster) {
+			this.#writer.startTrackingWrites();
+		}
+
 		this.#currentCluster = {
 			id: EBMLId.Cluster,
 			size: this.#options.streaming ? -1 : CLUSTER_SIZE_BYTES,
@@ -738,6 +752,11 @@ export class Muxer<T extends Target> {
 		this.#writer.seek(this.#writer.offsets.get(this.#currentCluster) + 4);
 		this.#writer.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
 		this.#writer.seek(endPos);
+
+		if (this.#writer instanceof BaseStreamTargetWriter && this.#writer.target.options.onCluster) {
+			let { data, start } = this.#writer.getTrackedWrites();
+			this.#writer.target.options.onCluster(data, start, this.#currentClusterTimestamp);
+		}
 	}
 
 	/** Finalizes the file, making it ready for use. Must be called after all media chunks have been added. */

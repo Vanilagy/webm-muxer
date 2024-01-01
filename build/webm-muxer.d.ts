@@ -105,11 +105,13 @@ declare class ArrayBufferTarget {
  * amount of writes, at the cost of latency.
  */
 declare class StreamTarget {
-	constructor(
-		onData: (data: Uint8Array, position: number) => void,
-		onDone?: () => void,
-		options?: { chunked?: true, chunkSize?: number }
-	);
+	constructor(options: {
+		onData?: (data: Uint8Array, position: number) => void,
+		onHeader?: (data: Uint8Array, position: number) => void,
+		onCluster?: (data: Uint8Array, position: number, timestamp: number) => void,
+		chunked?: boolean,
+		chunkSize?: number
+	});
 }
 
 /**

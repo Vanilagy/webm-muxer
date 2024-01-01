@@ -218,12 +218,73 @@ export class ArrayBufferTargetWriter extends Writer {
 	}
 }
 
+export abstract class BaseStreamTargetWriter extends Writer {
+	#trackingWrites = false;
+	#trackedWrites: Uint8Array;
+	#trackedStart: number;
+	#trackedEnd: number;
+
+	constructor(public target: StreamTarget) {
+		super();
+	}
+
+	write(data: Uint8Array) {
+		if (!this.#trackingWrites) return;
+
+		// Handle negative relative write positions
+		let pos = this.pos;
+		if (pos < this.#trackedStart) {
+			if (pos + data.byteLength <= this.#trackedStart) return;
+			data = data.subarray(this.#trackedStart - pos);
+			pos = 0;
+		}
+
+		let neededSize = pos + data.byteLength - this.#trackedStart;
+		let newLength = this.#trackedWrites.byteLength;
+		while (newLength < neededSize) newLength *= 2;
+
+		// Check if we need to resize the buffer
+		if (newLength !== this.#trackedWrites.byteLength) {
+			let copy = new Uint8Array(newLength);
+			copy.set(this.#trackedWrites, 0);
+			this.#trackedWrites = copy;
+		}
+
+		this.#trackedWrites.set(data, pos - this.#trackedStart);
+		this.#trackedEnd = Math.max(this.#trackedEnd, pos + data.byteLength);
+	}
+
+	startTrackingWrites() {
+		this.#trackingWrites = true;
+		this.#trackedWrites = new Uint8Array(2**10);
+		this.#trackedStart = this.pos;
+		this.#trackedEnd = this.pos;
+	}
+
+	getTrackedWrites() {
+		if (!this.#trackingWrites) {
+			throw new Error("Can't get tracked writes since nothing was tracked.");
+		}
+
+		let slice = this.#trackedWrites.subarray(0, this.#trackedEnd - this.#trackedStart);
+		let result = {
+			data: slice,
+			start: this.#trackedStart,
+			end: this.#trackedEnd
+		};
+
+		this.#trackedWrites = undefined;
+		this.#trackingWrites = false;
+
+		return result;
+	}
+}
+
 /**
  * Writes to a StreamTarget every time it is flushed, sending out all of the new data written since the
  * last flush. This is useful for streaming applications, like piping the output to disk.
  */
-export class StreamTargetWriter extends Writer {
-	#target: StreamTarget;
+export class StreamTargetWriter extends BaseStreamTargetWriter {
 	#sections: {
 		data: Uint8Array,
 		start: number
@@ -233,13 +294,14 @@ export class StreamTargetWriter extends Writer {
 	#ensureMonotonicity: boolean;
 
 	constructor(target: StreamTarget, ensureMonotonicity: boolean) {
-		super();
+		super(target);
 
-		this.#target = target;
 		this.#ensureMonotonicity = ensureMonotonicity;
 	}
 
-	write(data: Uint8Array) {
+	override write(data: Uint8Array) {
+		super.write(data);
+
 		this.#sections.push({
 			data: data.slice(),
 			start: this.pos
@@ -292,16 +354,14 @@ export class StreamTargetWriter extends Writer {
 				throw new Error('Internal error: Monotonicity violation.');
 			}
 
-			this.#target.onData(chunk.data, chunk.start);
+			this.target.options.onData?.(chunk.data, chunk.start);
 			this.#lastFlushEnd = chunk.start + chunk.data.byteLength;
 		}
 
 		this.#sections.length = 0;
 	}
 
-	finalize() {
-		this.#target.onDone?.();
-	}
+	finalize() {}
 }
 
 const DEFAULT_CHUNK_SIZE = 2**24;
@@ -323,8 +383,7 @@ interface ChunkSection {
  * Writes to a StreamTarget using a chunked approach: Data is first buffered in memory until it reaches a large enough
  * size, which is when it is piped to the StreamTarget. This is helpful for reducing the total amount of writes.
  */
-export class ChunkedStreamTargetWriter extends Writer {
-	#target: StreamTarget;
+export class ChunkedStreamTargetWriter extends BaseStreamTargetWriter {
 	#chunkSize: number;
 	/**
 	 * The data is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed out.
@@ -336,9 +395,8 @@ export class ChunkedStreamTargetWriter extends Writer {
 	#ensureMonotonicity: boolean;
 
 	constructor(target: StreamTarget, ensureMonotonicity: boolean) {
-		super();
+		super(target);
 
-		this.#target = target;
 		this.#chunkSize = target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE;
 		this.#ensureMonotonicity = ensureMonotonicity;
 
@@ -347,7 +405,9 @@ export class ChunkedStreamTargetWriter extends Writer {
 		}
 	}
 
-	write(data: Uint8Array) {
+	override write(data: Uint8Array) {
+		super.write(data);
+
 		this.#writeDataIntoChunks(data, this.pos);
 		this.#flushChunks();
 
@@ -444,7 +504,7 @@ export class ChunkedStreamTargetWriter extends Writer {
 					throw new Error('Internal error: Monotonicity violation.');
 				}
 
-				this.#target.onData(
+				this.target.options.onData?.(
 					chunk.data.subarray(section.start, section.end),
 					chunk.start + section.start
 				);
@@ -456,7 +516,6 @@ export class ChunkedStreamTargetWriter extends Writer {
 
 	finalize() {
 		this.#flushChunks(true);
-		this.#target.onDone?.();
 	}
 }
 
@@ -466,14 +525,14 @@ export class ChunkedStreamTargetWriter extends Writer {
  */
 export class FileSystemWritableFileStreamTargetWriter extends ChunkedStreamTargetWriter {
 	constructor(target: FileSystemWritableFileStreamTarget, ensureMonotonicity: boolean) {
-		super(new StreamTarget(
-			(data, position) => target.stream.write({
+		super(new StreamTarget({
+			onData: (data, position) => target.stream.write({
 				type: 'write',
 				data,
 				position
 			}),
-			undefined,
-			{ chunkSize: target.options?.chunkSize }
-		), ensureMonotonicity);
+			chunked: true,
+			chunkSize: target.options?.chunkSize
+		}), ensureMonotonicity);
 	}
 }

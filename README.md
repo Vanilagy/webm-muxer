@@ -139,33 +139,37 @@ This option specifies where the data created by the muxer will be written. The o
     useful if you want to stream the data, e.g. pipe it somewhere else. The constructor has the following signature:
 
     ```ts
-    constructor(
-        onData: (data: Uint8Array, position: number) => void,
-        onDone?: () => void,
-        options?: { chunked?: true, chunkSize?: number }
-    );
+    constructor(options: {
+        onData?: (data: Uint8Array, position: number) => void,
+        onHeader?: (data: Uint8Array, position: number) => void,
+        onCluster?: (data: Uint8Array, position: number, timestamp: number) => void,
+        chunked?: boolean,
+        chunkSize?: number
+    });
     ```
 
-    The `position` argument specifies the offset in bytes at which the data has to be written. Since the data written by
-    the muxer is not entirely sequential, **make sure to respect this argument**.
+    `onData` is called for each new chunk of available data. The `position` argument specifies the offset in bytes at
+    which the data has to be written. Since the data written by the muxer is not entirely sequential, **make sure to
+    respect this argument**.
     
-    When using `chunked: true` in the options, data created by the muxer will first be accumulated and only written out
-    once it has reached sufficient size. This is useful for reducing the total amount of writes, at the cost of
-    latency. It using a default chunk size of 16 MiB, which can be overridden by manually setting `chunkSize` to the
-    desired byte length.
+    When using `chunked: true`, data created by the muxer will first be accumulated and only written out once it has
+    reached sufficient size. This is useful for reducing the total amount of writes, at the cost of latency. It using a
+    default chunk size of 16 MiB, which can be overridden by manually setting `chunkSize` to the desired byte length.
     
     If you want to use this target for *live-streaming*, make sure to also set `streaming: true` in the muxer options.
     This will ensure that data is written monotonically (sequentially) and already-written data is never "patched" -
     necessary for live-streaming, but not recommended for muxing files for later viewing.
 
+    The `onHeader` and `onCluster` callbacks will be called for the file header and each Matroska cluster, respectively.
+    This way, you don't need to parse them out yourself from the data provided by `onData`.
+
     ```js
     import { Muxer, StreamTarget } from 'webm-muxer';
 
     let muxer = new Muxer({
-        target: new StreamTarget(
-            (data, position) => { /* Do something with the data */ },
-            () => { /* Muxing has finished */ }
-        ),
+        target: new StreamTarget({
+            onData: (data, position) => { /* Do something with the data */ }
+        }),
         // ...
     });
     ```

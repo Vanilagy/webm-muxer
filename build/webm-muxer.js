@@ -140,9 +140,7 @@ var WebMMuxer = (() => {
     }
   };
   var StreamTarget = class {
-    constructor(onData, onDone, options) {
-      this.onData = onData;
-      this.onDone = onDone;
+    constructor(options) {
       this.options = options;
     }
   };
@@ -342,18 +340,74 @@ var WebMMuxer = (() => {
     __privateSet(this, _buffer, newBuffer);
     __privateSet(this, _bytes, newBytes);
   };
-  var _target2, _sections, _lastFlushEnd, _ensureMonotonicity;
-  var StreamTargetWriter = class extends Writer {
-    constructor(target, ensureMonotonicity) {
+  var _trackingWrites, _trackedWrites, _trackedStart, _trackedEnd;
+  var BaseStreamTargetWriter = class extends Writer {
+    constructor(target) {
       super();
-      __privateAdd(this, _target2, void 0);
+      this.target = target;
+      __privateAdd(this, _trackingWrites, false);
+      __privateAdd(this, _trackedWrites, void 0);
+      __privateAdd(this, _trackedStart, void 0);
+      __privateAdd(this, _trackedEnd, void 0);
+    }
+    write(data) {
+      if (!__privateGet(this, _trackingWrites))
+        return;
+      let pos = this.pos;
+      if (pos < __privateGet(this, _trackedStart)) {
+        if (pos + data.byteLength <= __privateGet(this, _trackedStart))
+          return;
+        data = data.subarray(__privateGet(this, _trackedStart) - pos);
+        pos = 0;
+      }
+      let neededSize = pos + data.byteLength - __privateGet(this, _trackedStart);
+      let newLength = __privateGet(this, _trackedWrites).byteLength;
+      while (newLength < neededSize)
+        newLength *= 2;
+      if (newLength !== __privateGet(this, _trackedWrites).byteLength) {
+        let copy = new Uint8Array(newLength);
+        copy.set(__privateGet(this, _trackedWrites), 0);
+        __privateSet(this, _trackedWrites, copy);
+      }
+      __privateGet(this, _trackedWrites).set(data, pos - __privateGet(this, _trackedStart));
+      __privateSet(this, _trackedEnd, Math.max(__privateGet(this, _trackedEnd), pos + data.byteLength));
+    }
+    startTrackingWrites() {
+      __privateSet(this, _trackingWrites, true);
+      __privateSet(this, _trackedWrites, new Uint8Array(__pow(2, 10)));
+      __privateSet(this, _trackedStart, this.pos);
+      __privateSet(this, _trackedEnd, this.pos);
+    }
+    getTrackedWrites() {
+      if (!__privateGet(this, _trackingWrites)) {
+        throw new Error("Can't get tracked writes since nothing was tracked.");
+      }
+      let slice = __privateGet(this, _trackedWrites).subarray(0, __privateGet(this, _trackedEnd) - __privateGet(this, _trackedStart));
+      let result = {
+        data: slice,
+        start: __privateGet(this, _trackedStart),
+        end: __privateGet(this, _trackedEnd)
+      };
+      __privateSet(this, _trackedWrites, void 0);
+      __privateSet(this, _trackingWrites, false);
+      return result;
+    }
+  };
+  _trackingWrites = new WeakMap();
+  _trackedWrites = new WeakMap();
+  _trackedStart = new WeakMap();
+  _trackedEnd = new WeakMap();
+  var _sections, _lastFlushEnd, _ensureMonotonicity;
+  var StreamTargetWriter = class extends BaseStreamTargetWriter {
+    constructor(target, ensureMonotonicity) {
+      super(target);
       __privateAdd(this, _sections, []);
       __privateAdd(this, _lastFlushEnd, 0);
       __privateAdd(this, _ensureMonotonicity, void 0);
-      __privateSet(this, _target2, target);
       __privateSet(this, _ensureMonotonicity, ensureMonotonicity);
     }
     write(data) {
+      super.write(data);
       __privateGet(this, _sections).push({
         data: data.slice(),
         start: this.pos
@@ -361,6 +415,7 @@ var WebMMuxer = (() => {
       this.pos += data.byteLength;
     }
     flush() {
+      var _a, _b;
       if (__privateGet(this, _sections).length === 0)
         return;
       let chunks = [];
@@ -391,37 +446,32 @@ var WebMMuxer = (() => {
         if (__privateGet(this, _ensureMonotonicity) && chunk.start < __privateGet(this, _lastFlushEnd)) {
           throw new Error("Internal error: Monotonicity violation.");
         }
-        __privateGet(this, _target2).onData(chunk.data, chunk.start);
+        (_b = (_a = this.target.options).onData) == null ? void 0 : _b.call(_a, chunk.data, chunk.start);
         __privateSet(this, _lastFlushEnd, chunk.start + chunk.data.byteLength);
       }
       __privateGet(this, _sections).length = 0;
     }
     finalize() {
-      var _a, _b;
-      (_b = (_a = __privateGet(this, _target2)).onDone) == null ? void 0 : _b.call(_a);
     }
   };
-  _target2 = new WeakMap();
   _sections = new WeakMap();
   _lastFlushEnd = new WeakMap();
   _ensureMonotonicity = new WeakMap();
   var DEFAULT_CHUNK_SIZE = __pow(2, 24);
   var MAX_CHUNKS_AT_ONCE = 2;
-  var _target3, _chunkSize, _chunks, _lastFlushEnd2, _ensureMonotonicity2, _writeDataIntoChunks, writeDataIntoChunks_fn, _insertSectionIntoChunk, insertSectionIntoChunk_fn, _createChunk, createChunk_fn, _flushChunks, flushChunks_fn;
-  var ChunkedStreamTargetWriter = class extends Writer {
+  var _chunkSize, _chunks, _lastFlushEnd2, _ensureMonotonicity2, _writeDataIntoChunks, writeDataIntoChunks_fn, _insertSectionIntoChunk, insertSectionIntoChunk_fn, _createChunk, createChunk_fn, _flushChunks, flushChunks_fn;
+  var ChunkedStreamTargetWriter = class extends BaseStreamTargetWriter {
     constructor(target, ensureMonotonicity) {
       var _a, _b;
-      super();
+      super(target);
       __privateAdd(this, _writeDataIntoChunks);
       __privateAdd(this, _insertSectionIntoChunk);
       __privateAdd(this, _createChunk);
       __privateAdd(this, _flushChunks);
-      __privateAdd(this, _target3, void 0);
       __privateAdd(this, _chunkSize, void 0);
       __privateAdd(this, _chunks, []);
       __privateAdd(this, _lastFlushEnd2, 0);
       __privateAdd(this, _ensureMonotonicity2, void 0);
-      __privateSet(this, _target3, target);
       __privateSet(this, _chunkSize, (_b = (_a = target.options) == null ? void 0 : _a.chunkSize) != null ? _b : DEFAULT_CHUNK_SIZE);
       __privateSet(this, _ensureMonotonicity2, ensureMonotonicity);
       if (!Number.isInteger(__privateGet(this, _chunkSize)) || __privateGet(this, _chunkSize) < __pow(2, 10)) {
@@ -429,17 +479,15 @@ var WebMMuxer = (() => {
       }
     }
     write(data) {
+      super.write(data);
       __privateMethod(this, _writeDataIntoChunks, writeDataIntoChunks_fn).call(this, data, this.pos);
       __privateMethod(this, _flushChunks, flushChunks_fn).call(this);
       this.pos += data.byteLength;
     }
     finalize() {
-      var _a, _b;
       __privateMethod(this, _flushChunks, flushChunks_fn).call(this, true);
-      (_b = (_a = __privateGet(this, _target3)).onDone) == null ? void 0 : _b.call(_a);
     }
   };
-  _target3 = new WeakMap();
   _chunkSize = new WeakMap();
   _chunks = new WeakMap();
   _lastFlushEnd2 = new WeakMap();
@@ -508,6 +556,7 @@ var WebMMuxer = (() => {
   };
   _flushChunks = new WeakSet();
   flushChunks_fn = function(force = false) {
+    var _a, _b;
     for (let i = 0; i < __privateGet(this, _chunks).length; i++) {
       let chunk = __privateGet(this, _chunks)[i];
       if (!chunk.shouldFlush && !force)
@@ -516,7 +565,8 @@ var WebMMuxer = (() => {
         if (__privateGet(this, _ensureMonotonicity2) && chunk.start + section.start < __privateGet(this, _lastFlushEnd2)) {
           throw new Error("Internal error: Monotonicity violation.");
         }
-        __privateGet(this, _target3).onData(
+        (_b = (_a = this.target.options).onData) == null ? void 0 : _b.call(
+          _a,
           chunk.data.subarray(section.start, section.end),
           chunk.start + section.start
         );
@@ -528,15 +578,15 @@ var WebMMuxer = (() => {
   var FileSystemWritableFileStreamTargetWriter = class extends ChunkedStreamTargetWriter {
     constructor(target, ensureMonotonicity) {
       var _a;
-      super(new StreamTarget(
-        (data, position) => target.stream.write({
+      super(new StreamTarget({
+        onData: (data, position) => target.stream.write({
           type: "write",
           data,
           position
         }),
-        void 0,
-        { chunkSize: (_a = target.options) == null ? void 0 : _a.chunkSize }
-      ), ensureMonotonicity);
+        chunked: true,
+        chunkSize: (_a = target.options) == null ? void 0 : _a.chunkSize
+      }), ensureMonotonicity);
     }
   };
 
@@ -769,6 +819,9 @@ var WebMMuxer = (() => {
   };
   _createFileHeader = new WeakSet();
   createFileHeader_fn = function() {
+    if (__privateGet(this, _writer) instanceof BaseStreamTargetWriter && __privateGet(this, _writer).target.options.onHeader) {
+      __privateGet(this, _writer).startTrackingWrites();
+    }
     __privateMethod(this, _writeEBMLHeader, writeEBMLHeader_fn).call(this);
     if (!__privateGet(this, _options).streaming) {
       __privateMethod(this, _createSeekHead, createSeekHead_fn).call(this);
@@ -904,6 +957,10 @@ var WebMMuxer = (() => {
     };
     __privateSet(this, _segment, segment);
     __privateGet(this, _writer).writeEBML(segment);
+    if (__privateGet(this, _writer) instanceof BaseStreamTargetWriter && __privateGet(this, _writer).target.options.onHeader) {
+      let { data, start } = __privateGet(this, _writer).getTrackedWrites();
+      __privateGet(this, _writer).target.options.onHeader(data, start);
+    }
   };
   _createCues = new WeakSet();
   createCues_fn = function() {
@@ -1125,6 +1182,9 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
     if (__privateGet(this, _currentCluster) && !__privateGet(this, _options).streaming) {
       __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
     }
+    if (__privateGet(this, _writer) instanceof BaseStreamTargetWriter && __privateGet(this, _writer).target.options.onCluster) {
+      __privateGet(this, _writer).startTrackingWrites();
+    }
     __privateSet(this, _currentCluster, {
       id: 524531317 /* Cluster */,
       size: __privateGet(this, _options).streaming ? -1 : CLUSTER_SIZE_BYTES,
@@ -1154,6 +1214,10 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
     __privateGet(this, _writer).seek(__privateGet(this, _writer).offsets.get(__privateGet(this, _currentCluster)) + 4);
     __privateGet(this, _writer).writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
     __privateGet(this, _writer).seek(endPos);
+    if (__privateGet(this, _writer) instanceof BaseStreamTargetWriter && __privateGet(this, _writer).target.options.onCluster) {
+      let { data, start } = __privateGet(this, _writer).getTrackedWrites();
+      __privateGet(this, _writer).target.options.onCluster(data, start, __privateGet(this, _currentClusterTimestamp));
+    }
   };
   _ensureNotFinalized = new WeakSet();
   ensureNotFinalized_fn = function() {
