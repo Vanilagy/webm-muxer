@@ -752,6 +752,9 @@ var WebMMuxer = (() => {
       __privateMethod(this, _maybeFlushStreamingTargetWriter, maybeFlushStreamingTargetWriter_fn).call(this);
     }
     finalize() {
+      if (__privateGet(this, _finalized)) {
+        throw new Error("Cannot finalize a muxer more than once.");
+      }
       while (__privateGet(this, _videoChunkQueue).length > 0)
         __privateMethod(this, _writeBlock, writeBlock_fn).call(this, __privateGet(this, _videoChunkQueue).shift(), true);
       while (__privateGet(this, _audioChunkQueue).length > 0)

@@ -761,6 +761,10 @@ export class Muxer<T extends Target> {
 
 	/** Finalizes the file, making it ready for use. Must be called after all media chunks have been added. */
 	finalize() {
+		if (this.#finalized) {
+			throw new Error('Cannot finalize a muxer more than once.');
+		}
+
 		// Flush any remaining queued chunks to the file
 		while (this.#videoChunkQueue.length > 0) this.#writeBlock(this.#videoChunkQueue.shift(), true);
 		while (this.#audioChunkQueue.length > 0) this.#writeBlock(this.#audioChunkQueue.shift(), true);
