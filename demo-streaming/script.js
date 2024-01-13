@@ -55,7 +55,9 @@ const startRecording = async () => {
 	// Create a WebM muxer with a video track and audio track, if available
 	muxer = new WebMMuxer.Muxer({
 		streaming: true,
-		target: new WebMMuxer.StreamTarget(buffer => sourceBuffer.appendBuffer(buffer)),
+		target: new WebMMuxer.StreamTarget({
+			onData: buffer => sourceBuffer.appendBuffer(buffer)
+		}),
 		video: videoTrack ? {
 			codec: 'V_VP9',
 			width: videoTrackWidth,
