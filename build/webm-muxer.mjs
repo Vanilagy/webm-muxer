@@ -1094,7 +1094,7 @@ createInternalChunk_fn = function(data, type, timestamp, trackNumber, duration, 
 _validateTimestamp = new WeakSet();
 validateTimestamp_fn = function(timestamp, trackNumber) {
   let lastTimestamp = __privateGet(this, _lastTimestamps)[trackNumber];
-  if (trackNumber !== SUBTITLE_TRACK_NUMBER) {
+  if (!__privateGet(this, _options).subtitles || trackNumber !== SUBTITLE_TRACK_NUMBER) {
     let firstTimestamp = __privateGet(this, _firstTimestamps)[trackNumber];
     if (__privateGet(this, _options).firstTimestampBehavior === "strict" && lastTimestamp === -1 && timestamp !== 0) {
       throw new Error(

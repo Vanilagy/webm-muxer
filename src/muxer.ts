@@ -622,7 +622,7 @@ export class Muxer<T extends Target> {
 	#validateTimestamp(timestamp: number, trackNumber: number) {
 		let lastTimestamp = this.#lastTimestamps[trackNumber];
 
-		if (trackNumber !== SUBTITLE_TRACK_NUMBER) {
+		if (!this.#options.subtitles || trackNumber !== SUBTITLE_TRACK_NUMBER) {
 			let firstTimestamp = this.#firstTimestamps[trackNumber];
 
 			// Check first timestamp behavior
