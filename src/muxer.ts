@@ -12,8 +12,7 @@ import {
 } from './writer';
 
 const VIDEO_TRACK_NUMBER = 1;
-const AUDIO_TRACK_NUMBER = 2;
-const SUBTITLE_TRACK_NUMBER = 3;
+const SUBTITLE_TRACK_NUMBER = 2;
 const VIDEO_TRACK_TYPE = 1;
 const AUDIO_TRACK_TYPE = 2;
 const SUBTITLE_TRACK_TYPE = 17;
@@ -22,9 +21,18 @@ const CODEC_PRIVATE_MAX_SIZE = 2**12;
 const APP_NAME = 'https://github.com/Vanilagy/webm-muxer';
 const SEGMENT_SIZE_BYTES = 6;
 const CLUSTER_SIZE_BYTES = 5;
-const FIRST_TIMESTAMP_BEHAVIORS = ['strict',  'offset', 'permissive'] as const;
+const FIRST_TIMESTAMP_BEHAVIORS = ['strict', 'offset', 'permissive'] as const;
 
-interface MuxerOptions<T extends Target> {
+export interface AudioTrack {
+	trackNumber: number,
+	codec: string,
+	numberOfChannels: number,
+	sampleRate: number,
+	bitDepth?: number,
+	name?: string,
+}
+
+export interface MuxerOptions<T extends Target> {
 	target: T,
 	video?: {
 		codec: string,
@@ -33,12 +41,7 @@ interface MuxerOptions<T extends Target> {
 		frameRate?: number,
 		alpha?: boolean
 	},
-	audio?: {
-		codec: string,
-		numberOfChannels: number,
-		sampleRate: number,
-		bitDepth?: number
-	},
+	audio?: AudioTrack[],
 	subtitles?: {
 		codec: string
 	},
@@ -76,6 +79,7 @@ export class Muxer<T extends Target> {
 	target: T;
 
 	#options: MuxerOptions<T>;
+	#trackNumbers: number[];
 	#writer: Writer;
 
 	#segment: EBMLElement;
@@ -84,8 +88,7 @@ export class Muxer<T extends Target> {
 	#tracksElement: EBMLElement;
 	#segmentDuration: EBMLElement;
 	#colourElement: EBMLElement;
-	#videoCodecPrivate: EBML;
-	#audioCodecPrivate: EBML;
+	#codecPrivates: EBML[];
 	#subtitleCodecPrivate: EBML;
 	#cues: EBMLElement;
 
@@ -93,14 +96,11 @@ export class Muxer<T extends Target> {
 	#currentClusterTimestamp: number;
 
 	#duration = 0;
-	#videoChunkQueue: InternalMediaChunk[] = [];
-	#audioChunkQueue: InternalMediaChunk[] = [];
+	#chunkQueues: InternalMediaChunk[][] = [];
 	#subtitleChunkQueue: InternalMediaChunk[] = [];
-	#firstVideoTimestamp: number;
-	#firstAudioTimestamp: number;
-	#lastVideoTimestamp = -1;
-	#lastAudioTimestamp = -1;
-	#lastSubtitleTimestamp = -1;
+	#firstTimestamps: number[] = [];
+	#lastTimestamps: number[] = [];
+	#lastWrittenTimestamp = -1;
 	#colorSpace: VideoColorSpaceInit;
 	#finalized = false;
 
@@ -113,6 +113,20 @@ export class Muxer<T extends Target> {
 			...options
 		};
 		this.target = options.target;
+
+		// Gather all track numbers
+		this.#trackNumbers = [];
+		if (this.#options.video) {
+			this.#trackNumbers.push(VIDEO_TRACK_NUMBER);
+		}
+		if (this.#options.audio) {
+			for (let track of this.#options.audio) {
+				if (this.#trackNumbers.includes(track.trackNumber)) {
+					throw new Error(`Duplicated track number: ${track.trackNumber}`);
+				}
+				this.#trackNumbers.push(track.trackNumber);
+			}
+		}
 
 		let ensureMonotonicity = !!this.#options.streaming;
 
@@ -183,8 +197,12 @@ export class Muxer<T extends Target> {
 
 	/** Reserve 4 kiB for the CodecPrivate elements so we can write them later. */
 	#createCodecPrivatePlaceholders() {
-		this.#videoCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
-		this.#audioCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+		this.#codecPrivates = [];
+		for (let trackNumber of this.#trackNumbers) {
+			this.#codecPrivates[trackNumber] =
+				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+		}
+
 		this.#subtitleCodecPrivate = { id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
 	}
 
@@ -242,12 +260,15 @@ export class Muxer<T extends Target> {
 		this.#tracksElement = tracksElement;
 
 		if (this.#options.video) {
+			this.#chunkQueues[VIDEO_TRACK_NUMBER] = [];
+			this.#lastTimestamps[VIDEO_TRACK_NUMBER] = -1;
+
 			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
 				{ id: EBMLId.TrackNumber, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackUID, data: VIDEO_TRACK_NUMBER },
 				{ id: EBMLId.TrackType, data: VIDEO_TRACK_TYPE },
 				{ id: EBMLId.CodecID, data: this.#options.video.codec },
-				this.#videoCodecPrivate,
+				this.#codecPrivates[VIDEO_TRACK_NUMBER],
 				(this.#options.video.frameRate ?
 					{ id: EBMLId.DefaultDuration, data: 1e9/this.#options.video.frameRate } :
 					null
@@ -262,24 +283,28 @@ export class Muxer<T extends Target> {
 		}
 
 		if (this.#options.audio) {
-			this.#audioCodecPrivate = this.#options.streaming ? (this.#audioCodecPrivate || null) :
-				{ id: EBMLId.Void, size: 4, data: new Uint8Array(CODEC_PRIVATE_MAX_SIZE) };
+			for (let track of this.#options.audio) {
+				this.#chunkQueues[track.trackNumber] = [];
+				this.#lastTimestamps[track.trackNumber] = -1;
 
-			tracksElement.data.push({ id: EBMLId.TrackEntry, data: [
-				{ id: EBMLId.TrackNumber, data: AUDIO_TRACK_NUMBER },
-				{ id: EBMLId.TrackUID, data: AUDIO_TRACK_NUMBER },
-				{ id: EBMLId.TrackType, data: AUDIO_TRACK_TYPE },
-				{ id: EBMLId.CodecID, data: this.#options.audio.codec },
-				this.#audioCodecPrivate,
-				{ id: EBMLId.Audio, data: [
-					{ id: EBMLId.SamplingFrequency, data: new EBMLFloat32(this.#options.audio.sampleRate) },
-					{ id: EBMLId.Channels, data: this.#options.audio.numberOfChannels},
-					(this.#options.audio.bitDepth ?
-						{ id: EBMLId.BitDepth, data: this.#options.audio.bitDepth } :
-						null
-					)
-				] }
-			] });
+				tracksElement.data.push( {
+					id: EBMLId.TrackEntry, data: [
+						{ id: EBMLId.TrackNumber, data: track.trackNumber },
+						{ id: EBMLId.TrackUID, data: track.trackNumber },
+						{ id: EBMLId.TrackType, data: AUDIO_TRACK_TYPE },
+						track.name ? { id: EBMLId.Name, data: track.name } : null,
+						{ id: EBMLId.CodecID, data: track.codec },
+						this.#codecPrivates[track.trackNumber],
+						{ id: EBMLId.Audio, data: [
+							{ id: EBMLId.SamplingFrequency, data: new EBMLFloat32(track.sampleRate) },
+							{ id: EBMLId.Channels, data: track.numberOfChannels },
+							(track.bitDepth ?
+								{ id: EBMLId.BitDepth, data: track.bitDepth } :
+								null
+							)
+						] }
+					] } );
+			}
 		}
 
 		if (this.#options.subtitles) {
@@ -334,16 +359,7 @@ export class Muxer<T extends Target> {
 		this.addVideoChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
 	}
 
-	addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata) {
-		this.#ensureNotFinalized();
-		if (!this.#options.video) throw new Error('No video track declared.');
-
-		if (this.#firstVideoTimestamp === undefined) this.#firstVideoTimestamp = timestamp;
-		if (meta) this.#writeVideoDecoderConfig(meta);
-
-		let videoChunk = this.#createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
-		if (this.#options.video.codec === 'V_VP9') this.#fixVP9ColorSpace(videoChunk);
-
+	#writeOrQueueChunk(pending: InternalMediaChunk) {
 		/**
 		 * Okay, so the algorithm used to insert video and audio blocks (if both are present) is one where we want to
 		 * insert the blocks sorted, i.e. always monotonically increasing in timestamp. This means that we can write
@@ -353,23 +369,76 @@ export class Muxer<T extends Target> {
 		 * chunks remaining in the queues also be flushed to the file.
 		 */
 
-		this.#lastVideoTimestamp = videoChunk.timestamp;
+		let trackPrevTimestamp = this.#lastTimestamps[pending.trackNumber];
+		this.#lastTimestamps[pending.trackNumber] = pending.timestamp;
 
-		// Write all audio chunks with a timestamp smaller than the incoming video chunk
-		while (this.#audioChunkQueue.length > 0 && this.#audioChunkQueue[0].timestamp <= videoChunk.timestamp) {
-			let audioChunk = this.#audioChunkQueue.shift();
-			this.#writeBlock(audioChunk, false);
+		// If another track has a smaller timestamp than the current one previously had,
+		// this track is already waiting for that track to catch up.
+		// Only the track with the smallest timestamp has a chance to move the whole write forward.
+		if (trackPrevTimestamp !== this.#lastWrittenTimestamp) {
+			this.#chunkQueues[pending.trackNumber].push(pending);
+			return;
 		}
 
-		// Depending on the last audio chunk, either write the video chunk to the file or enqueue it
-		if (!this.#options.audio || videoChunk.timestamp <= this.#lastAudioTimestamp) {
-			this.#writeBlock(videoChunk, true);
-		} else {
-			this.#videoChunkQueue.push(videoChunk);
+		// Find the smallest timestamp among the tracks.
+		// Future chunks are not allowed to have a smaller timestamp than this,
+		// so it's safe to write up to this timestamp.
+		let minTimestamp = Infinity;
+		for (let trackNumber of this.#trackNumbers) {
+			let trackTimestamp = this.#lastTimestamps[trackNumber];
+			// It's possible that multiple tracks have the same smallest timestamp,
+			// and hold the write back together.
+			// This track got a new chunk, but that one still doesn't,
+			// so the write still can't continue.
+			if (trackTimestamp === this.#lastWrittenTimestamp) {
+				this.#chunkQueues[pending.trackNumber].push(pending);
+				return;
+			}
+
+			if (trackTimestamp < minTimestamp) {
+				minTimestamp = trackTimestamp;
+			}
 		}
+
+		// Gather all chunks from all tracks that can be written now.
+		// Because we have checked that at least one track has a new chunk,
+		// this array won't be empty.
+		let chunks: InternalMediaChunk[] = [];
+		for (let trackNumber of this.#trackNumbers) {
+			let queue = this.#chunkQueues[trackNumber];
+			let index = 0;
+			for (; index < queue.length; index++) {
+				if (queue[index].timestamp > minTimestamp) {
+					break;
+				}
+				chunks.push(queue[index]);
+			}
+			queue.splice(0, index);
+		}
+
+		chunks.push(pending);
+		chunks.sort((a, b) => a.timestamp - b.timestamp);
+
+		for (let chunk of chunks) {
+			this.#writeBlock(chunk, !this.#options.video || chunk.trackNumber === VIDEO_TRACK_NUMBER);
+		}
+		this.#lastWrittenTimestamp = minTimestamp;
 
 		this.#writeSubtitleChunks();
 		this.#maybeFlushStreamingTargetWriter();
+	}
+
+	addVideoChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedVideoChunkMetadata) {
+		this.#ensureNotFinalized();
+		if (!this.#options.video) throw new Error('No video track declared.');
+
+		this.#firstTimestamps[VIDEO_TRACK_NUMBER] ??= timestamp;
+		if (meta) this.#writeVideoDecoderConfig(meta);
+
+		let videoChunk = this.#createInternalChunk(data, type, timestamp, VIDEO_TRACK_NUMBER);
+		if (this.#options.video.codec === 'V_VP9') this.#fixVP9ColorSpace(videoChunk);
+
+		this.#writeOrQueueChunk(videoChunk);
 	}
 
 	/** Writes possible video decoder metadata to the file. */
@@ -410,9 +479,10 @@ export class Muxer<T extends Target> {
 
 		if (meta.decoderConfig.description) {
 			if (this.#options.streaming) {
-				this.#videoCodecPrivate = this.#createCodecPrivateElement(meta.decoderConfig.description);
+				this.#codecPrivates[VIDEO_TRACK_NUMBER] =
+					this.#createCodecPrivateElement(meta.decoderConfig.description);
 			} else {
-				this.#writeCodecPrivate(this.#videoCodecPrivate, meta.decoderConfig.description);
+				this.#writeCodecPrivate(this.#codecPrivates[VIDEO_TRACK_NUMBER], meta.decoderConfig.description);
 			}
 		}
 	}
@@ -453,46 +523,36 @@ export class Muxer<T extends Target> {
 		writeBits(chunk.data, i+0, i+3, colorSpaceID);
 	}
 
-	addAudioChunk(chunk: EncodedAudioChunk, meta?: EncodedAudioChunkMetadata, timestamp?: number) {
+	addAudioChunk(trackNumber: number, chunk: EncodedAudioChunk, meta?: EncodedAudioChunkMetadata, timestamp?: number) {
 		let data = new Uint8Array(chunk.byteLength);
 		chunk.copyTo(data);
 
-		this.addAudioChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
+		this.addAudioChunkRaw(trackNumber, data, chunk.type, timestamp ?? chunk.timestamp, meta);
 	}
 
-	addAudioChunkRaw(data: Uint8Array, type: 'key' | 'delta', timestamp: number, meta?: EncodedAudioChunkMetadata) {
+	addAudioChunkRaw(
+		trackNumber: number,
+		data: Uint8Array,
+		type: 'key' | 'delta',
+		timestamp: number,
+		meta?: EncodedAudioChunkMetadata
+	) {
 		this.#ensureNotFinalized();
 		if (!this.#options.audio) throw new Error('No audio track declared.');
 
-		if (this.#firstAudioTimestamp === undefined) this.#firstAudioTimestamp = timestamp;
+		this.#firstTimestamps[trackNumber] ??= timestamp;
 
 		// Write possible audio decoder metadata to the file
 		if (meta?.decoderConfig) {
 			if (this.#options.streaming) {
-				this.#audioCodecPrivate = this.#createCodecPrivateElement(meta.decoderConfig.description);
+				this.#codecPrivates[trackNumber] = this.#createCodecPrivateElement(meta.decoderConfig.description);
 			} else {
-				this.#writeCodecPrivate(this.#audioCodecPrivate, meta.decoderConfig.description);
+				this.#writeCodecPrivate(this.#codecPrivates[trackNumber], meta.decoderConfig.description);
 			}
 		}
 
-		let audioChunk = this.#createInternalChunk(data, type, timestamp, AUDIO_TRACK_NUMBER);
-
-		// Algorithm explained in `addVideoChunkRaw`
-		this.#lastAudioTimestamp = audioChunk.timestamp;
-
-		while (this.#videoChunkQueue.length > 0 && this.#videoChunkQueue[0].timestamp <= audioChunk.timestamp) {
-			let videoChunk = this.#videoChunkQueue.shift();
-			this.#writeBlock(videoChunk, true);
-		}
-
-		if (!this.#options.video || audioChunk.timestamp <= this.#lastVideoTimestamp) {
-			this.#writeBlock(audioChunk, !this.#options.video);
-		} else {
-			this.#audioChunkQueue.push(audioChunk);
-		}
-
-		this.#writeSubtitleChunks();
-		this.#maybeFlushStreamingTargetWriter();
+		let audioChunk = this.#createInternalChunk(data, type, timestamp, trackNumber);
+		this.#writeOrQueueChunk(audioChunk);
 	}
 
 	addSubtitleChunk(chunk: EncodedSubtitleChunk, meta: EncodedSubtitleChunkMetadata, timestamp?: number) {
@@ -517,7 +577,7 @@ export class Muxer<T extends Target> {
 			chunk.additions
 		);
 
-		this.#lastSubtitleTimestamp = subtitleChunk.timestamp;
+		this.#lastTimestamps[SUBTITLE_TRACK_NUMBER] = subtitleChunk.timestamp;
 		this.#subtitleChunkQueue.push(subtitleChunk);
 
 		this.#writeSubtitleChunks();
@@ -530,13 +590,8 @@ export class Muxer<T extends Target> {
 		// will NOT wait for subtitle chunks to arrive, as they may never arrive, so that's how non-monotonicity can
 		// arrive. But it should be fine, since it's all still in one cluster.
 
-		let lastWrittenMediaTimestamp = Math.min(
-			this.#options.video ? this.#lastVideoTimestamp : Infinity,
-			this.#options.audio ? this.#lastAudioTimestamp : Infinity
-		);
-
 		let queue = this.#subtitleChunkQueue;
-		while (queue.length > 0 && queue[0].timestamp <= lastWrittenMediaTimestamp) {
+		while (queue.length > 0 && queue[0].timestamp <= this.#lastWrittenTimestamp) {
 			this.#writeBlock(queue.shift(), !this.#options.video && !this.#options.audio);
 		}
 	}
@@ -565,14 +620,10 @@ export class Muxer<T extends Target> {
 	}
 
 	#validateTimestamp(timestamp: number, trackNumber: number) {
-		let lastTimestamp = trackNumber === VIDEO_TRACK_NUMBER ? this.#lastVideoTimestamp :
-			trackNumber === AUDIO_TRACK_NUMBER ? this.#lastAudioTimestamp :
-			this.#lastSubtitleTimestamp;
+		let lastTimestamp = this.#lastTimestamps[trackNumber];
 
 		if (trackNumber !== SUBTITLE_TRACK_NUMBER) {
-			let firstTimestamp = trackNumber === VIDEO_TRACK_NUMBER
-				? this.#firstVideoTimestamp
-				: this.#firstAudioTimestamp;
+			let firstTimestamp = this.#firstTimestamps[trackNumber];
 
 			// Check first timestamp behavior
 			if (this.#options.firstTimestampBehavior === 'strict' && lastTimestamp === -1 && timestamp !== 0) {
@@ -733,14 +784,10 @@ export class Muxer<T extends Target> {
 		// Add a CuePoint to the Cues element for better seeking
 		(this.#cues.data as EBML[]).push({ id: EBMLId.CuePoint, data: [
 			{ id: EBMLId.CueTime, data: timestamp },
-			(this.#options.video ? { id: EBMLId.CueTrackPositions, data: [
-				{ id: EBMLId.CueTrack, data: VIDEO_TRACK_NUMBER },
+			...this.#trackNumbers.map(trackNumber => ( { id: EBMLId.CueTrackPositions, data: [
+				{ id: EBMLId.CueTrack, data: trackNumber },
 				{ id: EBMLId.CueClusterPosition, data: clusterOffsetFromSegment }
-			] } : null),
-			(this.#options.audio ? { id: EBMLId.CueTrackPositions, data: [
-				{ id: EBMLId.CueTrack, data: AUDIO_TRACK_NUMBER },
-				{ id: EBMLId.CueClusterPosition, data: clusterOffsetFromSegment }
-			] } : null)
+			] } ) )
 		] });
 	}
 
@@ -766,8 +813,19 @@ export class Muxer<T extends Target> {
 		}
 
 		// Flush any remaining queued chunks to the file
-		while (this.#videoChunkQueue.length > 0) this.#writeBlock(this.#videoChunkQueue.shift(), true);
-		while (this.#audioChunkQueue.length > 0) this.#writeBlock(this.#audioChunkQueue.shift(), true);
+		let chunks: InternalMediaChunk[] = [];
+		for (let trackNumber of this.#trackNumbers) {
+			let queue = this.#chunkQueues[trackNumber];
+			chunks.push(...queue);
+			queue.length = 0;
+		}
+
+		chunks.sort((a, b) => a.timestamp - b.timestamp);
+
+		for (let chunk of chunks) {
+			this.#writeBlock(chunk, !this.#options.video || chunk.trackNumber === VIDEO_TRACK_NUMBER);
+		}
+
 		while (this.#subtitleChunkQueue.length > 0 && this.#subtitleChunkQueue[0].timestamp <= this.#duration) {
 			this.#writeBlock(this.#subtitleChunkQueue.shift(), false);
 		}

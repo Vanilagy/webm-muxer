@@ -48,6 +48,7 @@ export enum EBMLId {
 	TrackNumber = 0xd7,
 	TrackUID = 0x73c5,
 	TrackType = 0x83,
+	Name = 0x536e,
 	CodecID = 0x86,
 	CodecPrivate = 0x63a2,
 	DefaultDuration = 0x23e383,

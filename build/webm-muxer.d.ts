@@ -1,3 +1,35 @@
+declare interface AudioTrack {
+	/**
+	 * Unique ID of the track.
+   *
+   * The video track has the ID 1 when enabled, and the subtitle track has the ID 2 when enabled.
+   * Audio tracks need to have IDs not used by video or subtitle tracks.
+   * Each audio track must have a unique ID.
+	 */
+	trackNumber: number,
+	/**
+	 * The codec of the encoded audio chunks. Typical audio codec strings for WebM are `'A_OPUS'` and `'A_VORBIS'`.
+	 * For a full list of possible codecs, visit https://www.matroska.org/technical/codec_specs.html.
+	 */
+	codec: string,
+	/**
+	 * The number of audio channels in the audio track.
+	 */
+	numberOfChannels: number,
+	/**
+	 * The sample rate of the audio track in samples per second per channel.
+	 */
+	sampleRate: number,
+	/**
+	 * The bit depth of the audio track. Optional and typically only required for PCM-coded audio.
+	 */
+	bitDepth?: number,
+	/**
+	 * A human-readable name for the audio track. Optional.
+	 */
+	name?: string,
+}
+
 /**
  * Describes the properties used to configure an instance of `Muxer`.
  */
@@ -38,25 +70,7 @@ declare interface MuxerOptions<T extends Target> {
 	/**
 	 * When set, declares the existence of an audio track in the WebM file and configures that audio track.
 	 */
-	audio?: {
-		/**
-		 * The codec of the encoded audio chunks. Typical audio codec strings for WebM are `'A_OPUS'` and `'A_VORBIS'`.
-		 * For a full list of possible codecs, visit https://www.matroska.org/technical/codec_specs.html.
-		 */
-		codec: string,
-		/**
-		 * The number of audio channels in the audio track.
-		 */
-		numberOfChannels: number,
-		/**
-		 * The sample rate of the audio track in samples per second per channel.
-		 */
-		sampleRate: number,
-		/**
-		 * The bit depth of the audio track. Optional and typically only required for PCM-coded audio.
-		 */
-		bitDepth?: number
-	},
+	audio?: AudioTrack[],
 
 	/**
 	 * Configures the muxer to only write data monotonically, useful for live-streaming the WebM as it's being muxed;
@@ -149,12 +163,18 @@ declare class Muxer<T extends Target> {
 	addVideoChunk(chunk: EncodedVideoChunk, meta?: EncodedVideoChunkMetadata, timestamp?: number): void;
 	/**
 	 * Adds a new, encoded audio chunk to the WebM file.
+   * @param trackNumber The track number of the audio chunk. Needs to match the value in the options.
 	 * @param chunk The encoded audio chunk. Can be obtained through an `AudioEncoder`.
 	 * @param meta The metadata about the encoded audio, also provided by `AudioEncoder`.
 	 * @param timestamp Optionally, the timestamp to use for the audio chunk. When not provided, it will use the one
 	 * specified in `chunk`.
 	 */
-	addAudioChunk(chunk: EncodedAudioChunk, meta?: EncodedAudioChunkMetadata, timestamp?: number): void;
+	addAudioChunk(
+		trackNumber: number,
+		chunk: EncodedAudioChunk,
+		meta?: EncodedAudioChunkMetadata,
+		timestamp?: number
+  ): void;
 
 	/**
 	 * Adds a raw video chunk to the WebM file. This method should be used when the encoded video is not obtained
@@ -173,12 +193,14 @@ declare class Muxer<T extends Target> {
 	/**
 	 * Adds a raw audio chunk to the WebM file. This method should be used when the encoded audio is not obtained
 	 * through an `AudioEncoder` but through some other means, where no instance of `EncodedAudioChunk`is available.
+   * @param trackNumber The track number of the audio chunk. Needs to match the value in the options.
 	 * @param data The raw data of the audio chunk.
 	 * @param type Whether the audio chunk is a keyframe or delta frame.
 	 * @param timestamp The timestamp of the audio chunk.
 	 * @param meta Optionally, any encoder metadata.
 	 */
 	addAudioChunkRaw(
+		trackNumber: number,
 		data: Uint8Array,
 		type: 'key' | 'delta',
 		timestamp: number,
@@ -262,6 +284,7 @@ export {
 	StreamTarget,
 	FileSystemWritableFileStreamTarget,
 	SubtitleEncoder,
+	type AudioTrack,
 	type MuxerOptions,
 	type EncodedSubtitleChunk,
 	type EncodedSubtitleChunkMetadata,
