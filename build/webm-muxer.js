@@ -142,12 +142,48 @@ var WebMMuxer = (() => {
   var StreamTarget = class {
     constructor(options) {
       this.options = options;
+      if (typeof options !== "object") {
+        throw new TypeError("StreamTarget requires an options object to be passed to its constructor.");
+      }
+      if (options.onData) {
+        if (typeof options.onData !== "function") {
+          throw new TypeError("options.onData, when provided, must be a function.");
+        }
+        if (options.onData.length < 2) {
+          throw new TypeError(
+            "options.onData, when provided, must be a function that takes in at least two arguments (data and position). Ignoring the position argument, which specifies the byte offset at which the data is to be written, can lead to broken outputs."
+          );
+        }
+      }
+      if (options.onHeader && typeof options.onHeader !== "function") {
+        throw new TypeError("options.onHeader, when provided, must be a function.");
+      }
+      if (options.onCluster && typeof options.onCluster !== "function") {
+        throw new TypeError("options.onCluster, when provided, must be a function.");
+      }
+      if (options.chunked !== void 0 && typeof options.chunked !== "boolean") {
+        throw new TypeError("options.chunked, when provided, must be a boolean.");
+      }
+      if (options.chunkSize !== void 0 && (!Number.isInteger(options.chunkSize) || options.chunkSize <= 0)) {
+        throw new TypeError("options.chunkSize, when provided, must be a positive integer.");
+      }
     }
   };
   var FileSystemWritableFileStreamTarget = class {
     constructor(stream, options) {
       this.stream = stream;
       this.options = options;
+      if (!(stream instanceof FileSystemWritableFileStream)) {
+        throw new TypeError("FileSystemWritableFileStreamTarget requires a FileSystemWritableFileStream instance.");
+      }
+      if (options !== void 0 && typeof options !== "object") {
+        throw new TypeError("FileSystemWritableFileStreamTarget's options, when provided, must be an object.");
+      }
+      if (options) {
+        if (options.chunkSize !== void 0 && (!Number.isInteger(options.chunkSize) || options.chunkSize <= 0)) {
+          throw new TypeError("options.chunkSize, when provided, must be a positive integer");
+        }
+      }
     }
   };
 
@@ -674,11 +710,34 @@ var WebMMuxer = (() => {
       __privateMethod(this, _createFileHeader, createFileHeader_fn).call(this);
     }
     addVideoChunk(chunk, meta, timestamp) {
+      if (!(chunk instanceof EncodedVideoChunk)) {
+        throw new TypeError("addVideoChunk's first argument (chunk) must be of type EncodedVideoChunk.");
+      }
+      if (meta && typeof meta !== "object") {
+        throw new TypeError("addVideoChunk's second argument (meta), when provided, must be an object.");
+      }
+      if (timestamp !== void 0 && (!Number.isFinite(timestamp) || timestamp < 0)) {
+        throw new TypeError(
+          "addVideoChunk's third argument (timestamp), when provided, must be a non-negative real number."
+        );
+      }
       let data = new Uint8Array(chunk.byteLength);
       chunk.copyTo(data);
       this.addVideoChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
     }
     addVideoChunkRaw(data, type, timestamp, meta) {
+      if (!(data instanceof Uint8Array)) {
+        throw new TypeError("addVideoChunkRaw's first argument (data) must be an instance of Uint8Array.");
+      }
+      if (type !== "key" && type !== "delta") {
+        throw new TypeError("addVideoChunkRaw's second argument (type) must be either 'key' or 'delta'.");
+      }
+      if (!Number.isFinite(timestamp) || timestamp < 0) {
+        throw new TypeError("addVideoChunkRaw's third argument (timestamp) must be a non-negative real number.");
+      }
+      if (meta && typeof meta !== "object") {
+        throw new TypeError("addVideoChunkRaw's fourth argument (meta), when provided, must be an object.");
+      }
       __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
       if (!__privateGet(this, _options).video)
         throw new Error("No video track declared.");
@@ -703,11 +762,34 @@ var WebMMuxer = (() => {
       __privateMethod(this, _maybeFlushStreamingTargetWriter, maybeFlushStreamingTargetWriter_fn).call(this);
     }
     addAudioChunk(chunk, meta, timestamp) {
+      if (!(chunk instanceof EncodedAudioChunk)) {
+        throw new TypeError("addAudioChunk's first argument (chunk) must be of type EncodedAudioChunk.");
+      }
+      if (meta && typeof meta !== "object") {
+        throw new TypeError("addAudioChunk's second argument (meta), when provided, must be an object.");
+      }
+      if (timestamp !== void 0 && (!Number.isFinite(timestamp) || timestamp < 0)) {
+        throw new TypeError(
+          "addAudioChunk's third argument (timestamp), when provided, must be a non-negative real number."
+        );
+      }
       let data = new Uint8Array(chunk.byteLength);
       chunk.copyTo(data);
       this.addAudioChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
     }
     addAudioChunkRaw(data, type, timestamp, meta) {
+      if (!(data instanceof Uint8Array)) {
+        throw new TypeError("addAudioChunkRaw's first argument (data) must be an instance of Uint8Array.");
+      }
+      if (type !== "key" && type !== "delta") {
+        throw new TypeError("addAudioChunkRaw's second argument (type) must be either 'key' or 'delta'.");
+      }
+      if (!Number.isFinite(timestamp) || timestamp < 0) {
+        throw new TypeError("addAudioChunkRaw's third argument (timestamp) must be a non-negative real number.");
+      }
+      if (meta && typeof meta !== "object") {
+        throw new TypeError("addAudioChunkRaw's fourth argument (meta), when provided, must be an object.");
+      }
       __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
       if (!__privateGet(this, _options).audio)
         throw new Error("No audio track declared.");
@@ -735,6 +817,25 @@ var WebMMuxer = (() => {
       __privateMethod(this, _maybeFlushStreamingTargetWriter, maybeFlushStreamingTargetWriter_fn).call(this);
     }
     addSubtitleChunk(chunk, meta, timestamp) {
+      if (typeof chunk !== "object" || !chunk) {
+        throw new TypeError("addSubtitleChunk's first argument (chunk) must be an object.");
+      } else {
+        if (!(chunk.body instanceof Uint8Array)) {
+          throw new TypeError("body must be an instance of Uint8Array.");
+        }
+        if (!Number.isFinite(chunk.timestamp) || chunk.timestamp < 0) {
+          throw new TypeError("timestamp must be a non-negative real number.");
+        }
+        if (!Number.isFinite(chunk.duration) || chunk.duration < 0) {
+          throw new TypeError("duration must be a non-negative real number.");
+        }
+        if (chunk.additions && !(chunk.additions instanceof Uint8Array)) {
+          throw new TypeError("additions, when present, must be an instance of Uint8Array.");
+        }
+      }
+      if (typeof meta !== "object") {
+        throw new TypeError("addSubtitleChunk's second argument (meta) must be an object.");
+      }
       __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
       if (!__privateGet(this, _options).subtitles)
         throw new Error("No subtitle track declared.");
@@ -813,11 +914,65 @@ var WebMMuxer = (() => {
   _finalized = new WeakMap();
   _validateOptions = new WeakSet();
   validateOptions_fn = function(options) {
-    if (options.type && options.type !== "webm" && options.type !== "matroska") {
-      throw new Error(`Invalid type: ${options.type}`);
+    if (typeof options !== "object") {
+      throw new TypeError("The muxer requires an options object to be passed to its constructor.");
+    }
+    if (options.video) {
+      if (typeof options.video.codec !== "string") {
+        throw new TypeError(`Invalid video codec: ${options.video.codec}. Must be a string.`);
+      }
+      if (!Number.isInteger(options.video.width) || options.video.width <= 0) {
+        throw new TypeError(`Invalid video width: ${options.video.width}. Must be a positive integer.`);
+      }
+      if (!Number.isInteger(options.video.height) || options.video.height <= 0) {
+        throw new TypeError(`Invalid video height: ${options.video.height}. Must be a positive integer.`);
+      }
+      if (options.video.frameRate !== void 0) {
+        if (!Number.isFinite(options.video.frameRate) || options.video.frameRate <= 0) {
+          throw new TypeError(
+            `Invalid video frame rate: ${options.video.frameRate}. Must be a positive number.`
+          );
+        }
+      }
+      if (options.video.alpha !== void 0 && typeof options.video.alpha !== "boolean") {
+        throw new TypeError(`Invalid video alpha: ${options.video.alpha}. Must be a boolean.`);
+      }
+    }
+    if (options.audio) {
+      if (typeof options.audio.codec !== "string") {
+        throw new TypeError(`Invalid audio codec: ${options.audio.codec}. Must be a string.`);
+      }
+      if (!Number.isInteger(options.audio.numberOfChannels) || options.audio.numberOfChannels <= 0) {
+        throw new TypeError(
+          `Invalid number of audio channels: ${options.audio.numberOfChannels}. Must be a positive integer.`
+        );
+      }
+      if (!Number.isInteger(options.audio.sampleRate) || options.audio.sampleRate <= 0) {
+        throw new TypeError(
+          `Invalid audio sample rate: ${options.audio.sampleRate}. Must be a positive integer.`
+        );
+      }
+      if (options.audio.bitDepth !== void 0) {
+        if (!Number.isInteger(options.audio.bitDepth) || options.audio.bitDepth <= 0) {
+          throw new TypeError(
+            `Invalid audio bit depth: ${options.audio.bitDepth}. Must be a positive integer.`
+          );
+        }
+      }
+    }
+    if (options.subtitles) {
+      if (typeof options.subtitles.codec !== "string") {
+        throw new TypeError(`Invalid subtitles codec: ${options.subtitles.codec}. Must be a string.`);
+      }
+    }
+    if (options.type !== void 0 && !["webm", "matroska"].includes(options.type)) {
+      throw new TypeError(`Invalid type: ${options.type}. Must be 'webm' or 'matroska'.`);
     }
     if (options.firstTimestampBehavior && !FIRST_TIMESTAMP_BEHAVIORS.includes(options.firstTimestampBehavior)) {
-      throw new Error(`Invalid first timestamp behavior: ${options.firstTimestampBehavior}`);
+      throw new TypeError(`Invalid first timestamp behavior: ${options.firstTimestampBehavior}`);
+    }
+    if (options.streaming !== void 0 && typeof options.streaming !== "boolean") {
+      throw new TypeError(`Invalid streaming option: ${options.streaming}. Must be a boolean.`);
     }
   };
   _createFileHeader = new WeakSet();
