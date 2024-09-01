@@ -1,6 +1,6 @@
 const esbuild = require('esbuild');
 
-let baseConfig = {
+const baseConfig = {
 	entryPoints: ['src/index.ts'],
 	bundle: true,
 	logLevel: 'info',
