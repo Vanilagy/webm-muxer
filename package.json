@@ -19,7 +19,8 @@
     "build/webm-muxer.d.ts"
   ],
   "scripts": {
-    "watch": "node build.js",
+    "build": "node build.js",
+    "watch": "node build.js --watch",
     "check": "npx tsc --noEmit --skipLibCheck",
     "lint": "npx eslint src demo build"
   },
