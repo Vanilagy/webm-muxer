@@ -1,10 +1,10 @@
 const esbuild = require('esbuild');
 
-const baseConfig = {
+let baseConfig = {
 	entryPoints: ['src/index.ts'],
 	bundle: true,
 	logLevel: 'info',
-	watch: true
+	watch: process.argv[2] === '--watch',
 };
 
 const umdConfig = {
