@@ -22,7 +22,7 @@ const CODEC_PRIVATE_MAX_SIZE = 2**12;
 const APP_NAME = 'https://github.com/Vanilagy/webm-muxer';
 const SEGMENT_SIZE_BYTES = 6;
 const CLUSTER_SIZE_BYTES = 5;
-const FIRST_TIMESTAMP_BEHAVIORS = ['strict',  'offset', 'permissive'] as const;
+const FIRST_TIMESTAMP_BEHAVIORS = ['strict', 'offset', 'permissive'] as const;
 
 interface MuxerOptions<T extends Target> {
 	target: T,
@@ -134,6 +134,10 @@ export class Muxer<T extends Target> {
 	#validateOptions(options: MuxerOptions<T>) {
 		if (typeof options !== 'object') {
 			throw new TypeError('The muxer requires an options object to be passed to its constructor.');
+		}
+
+		if (!(options.target instanceof Target)) {
+			throw new TypeError('The target must be provided and an instance of Target.');
 		}
 
 		if (options.video) {

@@ -1,3 +1,3 @@
 export { Muxer } from './muxer';
 export { SubtitleEncoder } from './subtitles';
-export * from './target';
+export { ArrayBufferTarget, StreamTarget, FileSystemWritableFileStreamTarget } from './target';

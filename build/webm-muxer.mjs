@@ -1,20 +1,3 @@
-var __defProp = Object.defineProperty;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-var __pow = Math.pow;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __spreadValues = (a, b) => {
-  for (var prop in b ||= {})
-    if (__hasOwnProp.call(b, prop))
-      __defNormalProp(a, prop, b[prop]);
-  if (__getOwnPropSymbols)
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    }
-  return a;
-};
 var __accessCheck = (obj, member, msg) => {
   if (!member.has(obj))
     throw TypeError("Cannot " + msg);
@@ -56,9 +39,9 @@ var measureUnsignedInt = (value) => {
     return 2;
   } else if (value < 1 << 24) {
     return 3;
-  } else if (value < __pow(2, 32)) {
+  } else if (value < 2 ** 32) {
     return 4;
-  } else if (value < __pow(2, 40)) {
+  } else if (value < 2 ** 40) {
     return 5;
   } else {
     return 6;
@@ -73,9 +56,9 @@ var measureEBMLVarInt = (value) => {
     return 3;
   } else if (value < (1 << 28) - 1) {
     return 4;
-  } else if (value < __pow(2, 35) - 1) {
+  } else if (value < 2 ** 35 - 1) {
     return 5;
-  } else if (value < __pow(2, 42) - 1) {
+  } else if (value < 2 ** 42 - 1) {
     return 6;
   } else {
     throw new Error("EBML VINT size not supported " + value);
@@ -107,13 +90,19 @@ var writeBits = (bytes, start, end, value) => {
 };
 
 // src/target.ts
-var ArrayBufferTarget = class {
+var isTarget = Symbol("isTarget");
+var Target = class {
+};
+isTarget;
+var ArrayBufferTarget = class extends Target {
   constructor() {
+    super(...arguments);
     this.buffer = null;
   }
 };
-var StreamTarget = class {
+var StreamTarget = class extends Target {
   constructor(options) {
+    super();
     this.options = options;
     if (typeof options !== "object") {
       throw new TypeError("StreamTarget requires an options object to be passed to its constructor.");
@@ -142,8 +131,9 @@ var StreamTarget = class {
     }
   }
 };
-var FileSystemWritableFileStreamTarget = class {
+var FileSystemWritableFileStreamTarget = class extends Target {
   constructor(stream, options) {
+    super();
     this.stream = stream;
     this.options = options;
     if (!(stream instanceof FileSystemWritableFileStream)) {
@@ -200,15 +190,15 @@ var Writer = class {
         __privateGet(this, _helperView).setUint8(pos++, value);
         break;
       case 5:
-        __privateGet(this, _helperView).setUint8(pos++, 1 << 3 | value / __pow(2, 32) & 7);
+        __privateGet(this, _helperView).setUint8(pos++, 1 << 3 | value / 2 ** 32 & 7);
         __privateGet(this, _helperView).setUint8(pos++, value >> 24);
         __privateGet(this, _helperView).setUint8(pos++, value >> 16);
         __privateGet(this, _helperView).setUint8(pos++, value >> 8);
         __privateGet(this, _helperView).setUint8(pos++, value);
         break;
       case 6:
-        __privateGet(this, _helperView).setUint8(pos++, 1 << 2 | value / __pow(2, 40) & 3);
-        __privateGet(this, _helperView).setUint8(pos++, value / __pow(2, 32) | 0);
+        __privateGet(this, _helperView).setUint8(pos++, 1 << 2 | value / 2 ** 40 & 3);
+        __privateGet(this, _helperView).setUint8(pos++, value / 2 ** 32 | 0);
         __privateGet(this, _helperView).setUint8(pos++, value >> 24);
         __privateGet(this, _helperView).setUint8(pos++, value >> 16);
         __privateGet(this, _helperView).setUint8(pos++, value >> 8);
@@ -220,7 +210,6 @@ var Writer = class {
     this.write(__privateGet(this, _helper).subarray(0, pos));
   }
   writeEBML(data) {
-    var _a, _b;
     if (data === null)
       return;
     if (data instanceof Uint8Array) {
@@ -234,7 +223,7 @@ var Writer = class {
       __privateMethod(this, _writeUnsignedInt, writeUnsignedInt_fn).call(this, data.id);
       if (Array.isArray(data.data)) {
         let sizePos = this.pos;
-        let sizeSize = data.size === -1 ? 1 : (_a = data.size) != null ? _a : 4;
+        let sizeSize = data.size === -1 ? 1 : data.size ?? 4;
         if (data.size === -1) {
           __privateMethod(this, _writeByte, writeByte_fn).call(this, 255);
         } else {
@@ -251,7 +240,7 @@ var Writer = class {
           this.seek(endPos);
         }
       } else if (typeof data.data === "number") {
-        let size = (_b = data.size) != null ? _b : measureUnsignedInt(data.data);
+        let size = data.size ?? measureUnsignedInt(data.data);
         this.writeEBMLVarInt(size);
         __privateMethod(this, _writeUnsignedInt, writeUnsignedInt_fn).call(this, data.data, size);
       } else if (typeof data.data === "string") {
@@ -292,9 +281,9 @@ writeUnsignedInt_fn = function(value, width = measureUnsignedInt(value)) {
   let pos = 0;
   switch (width) {
     case 6:
-      __privateGet(this, _helperView).setUint8(pos++, value / __pow(2, 40) | 0);
+      __privateGet(this, _helperView).setUint8(pos++, value / 2 ** 40 | 0);
     case 5:
-      __privateGet(this, _helperView).setUint8(pos++, value / __pow(2, 32) | 0);
+      __privateGet(this, _helperView).setUint8(pos++, value / 2 ** 32 | 0);
     case 4:
       __privateGet(this, _helperView).setUint8(pos++, value >> 24);
     case 3:
@@ -319,7 +308,7 @@ var ArrayBufferTargetWriter = class extends Writer {
     super();
     __privateAdd(this, _ensureSize);
     __privateAdd(this, _target, void 0);
-    __privateAdd(this, _buffer, new ArrayBuffer(__pow(2, 16)));
+    __privateAdd(this, _buffer, new ArrayBuffer(2 ** 16));
     __privateAdd(this, _bytes, new Uint8Array(__privateGet(this, _buffer)));
     __privateSet(this, _target, target);
   }
@@ -383,7 +372,7 @@ var BaseStreamTargetWriter = class extends Writer {
   }
   startTrackingWrites() {
     __privateSet(this, _trackingWrites, true);
-    __privateSet(this, _trackedWrites, new Uint8Array(__pow(2, 10)));
+    __privateSet(this, _trackedWrites, new Uint8Array(2 ** 10));
     __privateSet(this, _trackedStart, this.pos);
     __privateSet(this, _trackedEnd, this.pos);
   }
@@ -424,7 +413,6 @@ var StreamTargetWriter = class extends BaseStreamTargetWriter {
     this.pos += data.byteLength;
   }
   flush() {
-    var _a, _b;
     if (__privateGet(this, _sections).length === 0)
       return;
     let chunks = [];
@@ -455,7 +443,7 @@ var StreamTargetWriter = class extends BaseStreamTargetWriter {
       if (__privateGet(this, _ensureMonotonicity) && chunk.start < __privateGet(this, _lastFlushEnd)) {
         throw new Error("Internal error: Monotonicity violation.");
       }
-      (_b = (_a = this.target.options).onData) == null ? void 0 : _b.call(_a, chunk.data, chunk.start);
+      this.target.options.onData?.(chunk.data, chunk.start);
       __privateSet(this, _lastFlushEnd, chunk.start + chunk.data.byteLength);
     }
     __privateGet(this, _sections).length = 0;
@@ -466,12 +454,11 @@ var StreamTargetWriter = class extends BaseStreamTargetWriter {
 _sections = new WeakMap();
 _lastFlushEnd = new WeakMap();
 _ensureMonotonicity = new WeakMap();
-var DEFAULT_CHUNK_SIZE = __pow(2, 24);
+var DEFAULT_CHUNK_SIZE = 2 ** 24;
 var MAX_CHUNKS_AT_ONCE = 2;
 var _chunkSize, _chunks, _lastFlushEnd2, _ensureMonotonicity2, _writeDataIntoChunks, writeDataIntoChunks_fn, _insertSectionIntoChunk, insertSectionIntoChunk_fn, _createChunk, createChunk_fn, _flushChunks, flushChunks_fn;
 var ChunkedStreamTargetWriter = class extends BaseStreamTargetWriter {
   constructor(target, ensureMonotonicity) {
-    var _a, _b;
     super(target);
     __privateAdd(this, _writeDataIntoChunks);
     __privateAdd(this, _insertSectionIntoChunk);
@@ -481,9 +468,9 @@ var ChunkedStreamTargetWriter = class extends BaseStreamTargetWriter {
     __privateAdd(this, _chunks, []);
     __privateAdd(this, _lastFlushEnd2, 0);
     __privateAdd(this, _ensureMonotonicity2, void 0);
-    __privateSet(this, _chunkSize, (_b = (_a = target.options) == null ? void 0 : _a.chunkSize) != null ? _b : DEFAULT_CHUNK_SIZE);
+    __privateSet(this, _chunkSize, target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE);
     __privateSet(this, _ensureMonotonicity2, ensureMonotonicity);
-    if (!Number.isInteger(__privateGet(this, _chunkSize)) || __privateGet(this, _chunkSize) < __pow(2, 10)) {
+    if (!Number.isInteger(__privateGet(this, _chunkSize)) || __privateGet(this, _chunkSize) < 2 ** 10) {
       throw new Error("Invalid StreamTarget options: chunkSize must be an integer not smaller than 1024.");
     }
   }
@@ -565,7 +552,6 @@ createChunk_fn = function(includesPosition) {
 };
 _flushChunks = new WeakSet();
 flushChunks_fn = function(force = false) {
-  var _a, _b;
   for (let i = 0; i < __privateGet(this, _chunks).length; i++) {
     let chunk = __privateGet(this, _chunks)[i];
     if (!chunk.shouldFlush && !force)
@@ -574,8 +560,7 @@ flushChunks_fn = function(force = false) {
       if (__privateGet(this, _ensureMonotonicity2) && chunk.start + section.start < __privateGet(this, _lastFlushEnd2)) {
         throw new Error("Internal error: Monotonicity violation.");
       }
-      (_b = (_a = this.target.options).onData) == null ? void 0 : _b.call(
-        _a,
+      this.target.options.onData?.(
         chunk.data.subarray(section.start, section.end),
         chunk.start + section.start
       );
@@ -586,7 +571,6 @@ flushChunks_fn = function(force = false) {
 };
 var FileSystemWritableFileStreamTargetWriter = class extends ChunkedStreamTargetWriter {
   constructor(target, ensureMonotonicity) {
-    var _a;
     super(new StreamTarget({
       onData: (data, position) => target.stream.write({
         type: "write",
@@ -594,7 +578,7 @@ var FileSystemWritableFileStreamTargetWriter = class extends ChunkedStreamTarget
         position
       }),
       chunked: true,
-      chunkSize: (_a = target.options) == null ? void 0 : _a.chunkSize
+      chunkSize: target.options?.chunkSize
     }), ensureMonotonicity);
   }
 };
@@ -606,8 +590,8 @@ var SUBTITLE_TRACK_NUMBER = 3;
 var VIDEO_TRACK_TYPE = 1;
 var AUDIO_TRACK_TYPE = 2;
 var SUBTITLE_TRACK_TYPE = 17;
-var MAX_CHUNK_LENGTH_MS = __pow(2, 15);
-var CODEC_PRIVATE_MAX_SIZE = __pow(2, 12);
+var MAX_CHUNK_LENGTH_MS = 2 ** 15;
+var CODEC_PRIVATE_MAX_SIZE = 2 ** 12;
 var APP_NAME = "https://github.com/Vanilagy/webm-muxer";
 var SEGMENT_SIZE_BYTES = 6;
 var CLUSTER_SIZE_BYTES = 5;
@@ -663,18 +647,18 @@ var Muxer = class {
     __privateAdd(this, _lastSubtitleTimestamp, -1);
     __privateAdd(this, _colorSpace, void 0);
     __privateAdd(this, _finalized, false);
-    var _a;
     __privateMethod(this, _validateOptions, validateOptions_fn).call(this, options);
-    __privateSet(this, _options, __spreadValues({
+    __privateSet(this, _options, {
       type: "webm",
-      firstTimestampBehavior: "strict"
-    }, options));
+      firstTimestampBehavior: "strict",
+      ...options
+    });
     this.target = options.target;
     let ensureMonotonicity = !!__privateGet(this, _options).streaming;
     if (options.target instanceof ArrayBufferTarget) {
       __privateSet(this, _writer, new ArrayBufferTargetWriter(options.target));
     } else if (options.target instanceof StreamTarget) {
-      __privateSet(this, _writer, ((_a = options.target.options) == null ? void 0 : _a.chunked) ? new ChunkedStreamTargetWriter(options.target, ensureMonotonicity) : new StreamTargetWriter(options.target, ensureMonotonicity));
+      __privateSet(this, _writer, options.target.options?.chunked ? new ChunkedStreamTargetWriter(options.target, ensureMonotonicity) : new StreamTargetWriter(options.target, ensureMonotonicity));
     } else if (options.target instanceof FileSystemWritableFileStreamTarget) {
       __privateSet(this, _writer, new FileSystemWritableFileStreamTargetWriter(options.target, ensureMonotonicity));
     } else {
@@ -696,7 +680,7 @@ var Muxer = class {
     }
     let data = new Uint8Array(chunk.byteLength);
     chunk.copyTo(data);
-    this.addVideoChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
+    this.addVideoChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
   }
   addVideoChunkRaw(data, type, timestamp, meta) {
     if (!(data instanceof Uint8Array)) {
@@ -748,7 +732,7 @@ var Muxer = class {
     }
     let data = new Uint8Array(chunk.byteLength);
     chunk.copyTo(data);
-    this.addAudioChunkRaw(data, chunk.type, timestamp != null ? timestamp : chunk.timestamp, meta);
+    this.addAudioChunkRaw(data, chunk.type, timestamp ?? chunk.timestamp, meta);
   }
   addAudioChunkRaw(data, type, timestamp, meta) {
     if (!(data instanceof Uint8Array)) {
@@ -768,7 +752,7 @@ var Muxer = class {
       throw new Error("No audio track declared.");
     if (__privateGet(this, _firstAudioTimestamp) === void 0)
       __privateSet(this, _firstAudioTimestamp, timestamp);
-    if (meta == null ? void 0 : meta.decoderConfig) {
+    if (meta?.decoderConfig) {
       if (__privateGet(this, _options).streaming) {
         __privateSet(this, _audioCodecPrivate, __privateMethod(this, _createCodecPrivateElement, createCodecPrivateElement_fn).call(this, meta.decoderConfig.description));
       } else {
@@ -812,14 +796,14 @@ var Muxer = class {
     __privateMethod(this, _ensureNotFinalized, ensureNotFinalized_fn).call(this);
     if (!__privateGet(this, _options).subtitles)
       throw new Error("No subtitle track declared.");
-    if (meta == null ? void 0 : meta.decoderConfig) {
+    if (meta?.decoderConfig) {
       if (__privateGet(this, _options).streaming) {
         __privateSet(this, _subtitleCodecPrivate, __privateMethod(this, _createCodecPrivateElement, createCodecPrivateElement_fn).call(this, meta.decoderConfig.description));
       } else {
         __privateMethod(this, _writeCodecPrivate, writeCodecPrivate_fn).call(this, __privateGet(this, _subtitleCodecPrivate), meta.decoderConfig.description);
       }
     }
-    let subtitleChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, chunk.body, "key", timestamp != null ? timestamp : chunk.timestamp, SUBTITLE_TRACK_NUMBER, chunk.duration, chunk.additions);
+    let subtitleChunk = __privateMethod(this, _createInternalChunk, createInternalChunk_fn).call(this, chunk.body, "key", timestamp ?? chunk.timestamp, SUBTITLE_TRACK_NUMBER, chunk.duration, chunk.additions);
     __privateSet(this, _lastSubtitleTimestamp, subtitleChunk.timestamp);
     __privateGet(this, _subtitleChunkQueue).push(subtitleChunk);
     __privateMethod(this, _writeSubtitleChunks, writeSubtitleChunks_fn).call(this);
@@ -889,6 +873,9 @@ _validateOptions = new WeakSet();
 validateOptions_fn = function(options) {
   if (typeof options !== "object") {
     throw new TypeError("The muxer requires an options object to be passed to its constructor.");
+  }
+  if (!(options.target instanceof Target)) {
+    throw new TypeError("The target must be provided and an instance of Target.");
   }
   if (options.video) {
     if (typeof options.video.codec !== "string") {
@@ -970,13 +957,12 @@ createFileHeader_fn = function() {
 };
 _writeEBMLHeader = new WeakSet();
 writeEBMLHeader_fn = function() {
-  var _a;
   let ebmlHeader = { id: 440786851 /* EBML */, data: [
     { id: 17030 /* EBMLVersion */, data: 1 },
     { id: 17143 /* EBMLReadVersion */, data: 1 },
     { id: 17138 /* EBMLMaxIDLength */, data: 4 },
     { id: 17139 /* EBMLMaxSizeLength */, data: 8 },
-    { id: 17026 /* DocType */, data: (_a = __privateGet(this, _options).type) != null ? _a : "webm" },
+    { id: 17026 /* DocType */, data: __privateGet(this, _options).type ?? "webm" },
     { id: 17031 /* DocTypeVersion */, data: 2 },
     { id: 17029 /* DocTypeReadVersion */, data: 2 }
   ] };
@@ -1382,7 +1368,6 @@ var SubtitleEncoder = class {
     __privateSet(this, _config, config);
   }
   encode(text) {
-    var _a;
     if (!__privateGet(this, _config)) {
       throw new Error("Encoder not configured.");
     }
@@ -1396,7 +1381,7 @@ var SubtitleEncoder = class {
         throw error;
       }
       match = cueBlockHeaderRegex.exec(text);
-      let preamble = text.slice(0, (_a = match == null ? void 0 : match.index) != null ? _a : text.length).trimEnd();
+      let preamble = text.slice(0, match?.index ?? text.length).trimEnd();
       if (!preamble) {
         let error = new Error("No WebVTT preamble provided.");
         __privateGet(this, _options2).error(error);

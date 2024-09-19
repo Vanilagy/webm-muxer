@@ -1,10 +1,14 @@
-export type Target = ArrayBufferTarget | StreamTarget | FileSystemWritableFileStreamTarget;
+const isTarget = Symbol('isTarget');
+export abstract class Target {
+	// If we didn't add this symbol, then {} would be assignable to Target
+	[isTarget]: true;
+}
 
-export class ArrayBufferTarget {
+export class ArrayBufferTarget extends Target {
 	buffer: ArrayBuffer = null;
 }
 
-export class StreamTarget {
+export class StreamTarget extends Target {
 	constructor(public options: {
 		onData?: (data: Uint8Array, position: number) => void,
 		onHeader?: (data: Uint8Array, position: number) => void,
@@ -12,6 +16,8 @@ export class StreamTarget {
 		chunked?: boolean,
 		chunkSize?: number
 	}) {
+		super();
+
 		if (typeof options !== 'object') {
 			throw new TypeError('StreamTarget requires an options object to be passed to its constructor.');
 		}
@@ -44,11 +50,13 @@ export class StreamTarget {
 	}
 }
 
-export class FileSystemWritableFileStreamTarget {
+export class FileSystemWritableFileStreamTarget extends Target {
 	constructor(
 		public stream: FileSystemWritableFileStream,
 		public options?: { chunkSize?: number }
 	) {
+		super();
+
 		if (!(stream instanceof FileSystemWritableFileStream)) {
 			throw new TypeError('FileSystemWritableFileStreamTarget requires a FileSystemWritableFileStream instance.');
 		}
