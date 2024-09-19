@@ -2,6 +2,7 @@
 
 [![](https://img.shields.io/npm/v/webm-muxer)](https://www.npmjs.com/package/webm-muxer)
 [![](https://img.shields.io/bundlephobia/minzip/webm-muxer)](https://bundlephobia.com/package/webm-muxer)
+[![](https://img.shields.io/npm/dm/webm-muxer)](https://www.npmjs.com/package/webm-muxer)
 
 The WebCodecs API provides low-level access to media codecs, but provides no way of actually packaging (multiplexing)
 the encoded media into a playable file. This project implements a WebM/Matroska multiplexer in pure TypeScript, which is
