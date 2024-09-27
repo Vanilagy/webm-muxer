@@ -56,7 +56,8 @@ const startRecording = async () => {
 	muxer = new WebMMuxer.Muxer({
 		streaming: true,
 		target: new WebMMuxer.StreamTarget({
-			onData: buffer => sourceBuffer.appendBuffer(buffer)
+			// Because 'streaming' is true, the buffers are contiguous and the position argument can be ignored
+			onData: (buffer, _) => sourceBuffer.appendBuffer(buffer)
 		}),
 		video: videoTrack ? {
 			codec: 'V_VP9',
