@@ -38,7 +38,8 @@ const startRecording = async () => {
 
 	endRecordingButton.style.display = 'block';
 
-	let audioSampleRate = audioTrack?.getCapabilities().sampleRate.max;
+	let audioSampleRate = audioTrack?.getSettings().sampleRate;
+	let audioNumberOfChannels = audioTrack?.getSettings().channelCount;
 
 	// Create a WebM muxer with a video track and maybe an audio track
 	muxer = new WebMMuxer.Muxer({
@@ -52,7 +53,7 @@ const startRecording = async () => {
 		audio: audioTrack ? {
 			codec: 'A_OPUS',
 			sampleRate: audioSampleRate,
-			numberOfChannels: 1
+			numberOfChannels: audioNumberOfChannels
 		} : undefined,
 		firstTimestampBehavior: 'offset' // Because we're directly piping a MediaStreamTrack's data into it
 	});
@@ -75,7 +76,7 @@ const startRecording = async () => {
 		});
 		audioEncoder.configure({
 			codec: 'opus',
-			numberOfChannels: 1,
+			numberOfChannels: audioNumberOfChannels,
 			sampleRate: audioSampleRate,
 			bitrate: 64000
 		});
