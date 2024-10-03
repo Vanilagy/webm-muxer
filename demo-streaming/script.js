@@ -48,7 +48,8 @@ const startRecording = async () => {
 
 	endRecordingButton.style.display = 'block';
 
-	let audioSampleRate = audioTrack?.getCapabilities().sampleRate.max;
+	let audioSampleRate = audioTrack?.getSettings().sampleRate;
+	let audioNumberOfChannels = audioTrack?.getSettings().channelCount;
 	let videoTrackWidth = videoTrack?.getSettings().width;
 	let videoTrackHeight = videoTrack?.getSettings().height;
 
@@ -68,7 +69,7 @@ const startRecording = async () => {
 		audio: audioTrack ? {
 			codec: 'A_OPUS',
 			sampleRate: audioSampleRate,
-			numberOfChannels: 1
+			numberOfChannels: audioNumberOfChannels
 		} : undefined,
 		firstTimestampBehavior: 'offset' // Because we're directly pumping a MediaStreamTrack's data into it
 	});
@@ -81,7 +82,7 @@ const startRecording = async () => {
 		});
 		audioEncoder.configure({
 			codec: 'opus',
-			numberOfChannels: 1,
+			numberOfChannels: audioNumberOfChannels,
 			sampleRate: audioSampleRate,
 			bitrate: 64000
 		});
