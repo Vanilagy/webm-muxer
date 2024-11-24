@@ -108,8 +108,8 @@ const encodeVideoFrame = () => {
 		timestamp: elapsedTime * 1000
 	});
 
-	// Ensure a video key frame at least every 10 seconds
-	let needsKeyFrame = elapsedTime - lastKeyFrame >= 10000;
+	// Ensure a video key frame at least every 5 seconds
+	let needsKeyFrame = elapsedTime - lastKeyFrame >= 5000;
 	if (needsKeyFrame) lastKeyFrame = elapsedTime;
 
 	videoEncoder.encode(frame, { keyFrame: needsKeyFrame });
