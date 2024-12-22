@@ -820,7 +820,7 @@ var Muxer = class {
     while (__privateGet(this, _subtitleChunkQueue).length > 0 && __privateGet(this, _subtitleChunkQueue)[0].timestamp <= __privateGet(this, _duration)) {
       __privateMethod(this, _writeBlock, writeBlock_fn).call(this, __privateGet(this, _subtitleChunkQueue).shift(), false);
     }
-    if (!__privateGet(this, _options).streaming) {
+    if (__privateGet(this, _currentCluster) && !__privateGet(this, _options).streaming) {
       __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
     }
     __privateGet(this, _writer).writeEBML(__privateGet(this, _cues));

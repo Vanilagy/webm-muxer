@@ -914,7 +914,7 @@ export class Muxer<T extends Target> {
 			this.#writeBlock(this.#subtitleChunkQueue.shift(), false);
 		}
 
-		if (!this.#options.streaming) {
+		if (this.#currentCluster && !this.#options.streaming) {
 			this.#finalizeCurrentCluster();
 		}
 		this.#writer.writeEBML(this.#cues);
