@@ -708,7 +708,7 @@ var Muxer = class {
     __privateSet(this, _lastVideoTimestamp, videoChunk.timestamp);
     while (__privateGet(this, _audioChunkQueue).length > 0 && __privateGet(this, _audioChunkQueue)[0].timestamp <= videoChunk.timestamp) {
       let audioChunk = __privateGet(this, _audioChunkQueue).shift();
-      __privateMethod(this, _writeBlock, writeBlock_fn).call(this, audioChunk, false);
+      __privateMethod(this, _writeBlock, writeBlock_fn).call(this, audioChunk, true);
     }
     if (!__privateGet(this, _options).audio || videoChunk.timestamp <= __privateGet(this, _lastAudioTimestamp)) {
       __privateMethod(this, _writeBlock, writeBlock_fn).call(this, videoChunk, true);
@@ -766,7 +766,7 @@ var Muxer = class {
       __privateMethod(this, _writeBlock, writeBlock_fn).call(this, videoChunk, true);
     }
     if (!__privateGet(this, _options).video || audioChunk.timestamp <= __privateGet(this, _lastVideoTimestamp)) {
-      __privateMethod(this, _writeBlock, writeBlock_fn).call(this, audioChunk, !__privateGet(this, _options).video);
+      __privateMethod(this, _writeBlock, writeBlock_fn).call(this, audioChunk, true);
     } else {
       __privateGet(this, _audioChunkQueue).push(audioChunk);
     }

@@ -453,7 +453,7 @@ export class Muxer<T extends Target> {
 		// Write all audio chunks with a timestamp smaller than the incoming video chunk
 		while (this.#audioChunkQueue.length > 0 && this.#audioChunkQueue[0].timestamp <= videoChunk.timestamp) {
 			let audioChunk = this.#audioChunkQueue.shift();
-			this.#writeBlock(audioChunk, false);
+			this.#writeBlock(audioChunk, true);
 		}
 
 		// Depending on the last audio chunk, either write the video chunk to the file or enqueue it
@@ -606,7 +606,7 @@ export class Muxer<T extends Target> {
 		}
 
 		if (!this.#options.video || audioChunk.timestamp <= this.#lastVideoTimestamp) {
-			this.#writeBlock(audioChunk, !this.#options.video);
+			this.#writeBlock(audioChunk, true);
 		} else {
 			this.#audioChunkQueue.push(audioChunk);
 		}
