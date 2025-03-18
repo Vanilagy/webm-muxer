@@ -850,7 +850,7 @@ export class Muxer<T extends Target> {
 
 	/** Creates a new Cluster element to contain media chunks. */
 	#createNewCluster(timestamp: number) {
-		if (this.#currentCluster && !this.#options.streaming) {
+		if (this.#currentCluster) {
 			this.#finalizeCurrentCluster();
 		}
 
@@ -887,13 +887,15 @@ export class Muxer<T extends Target> {
 	}
 
 	#finalizeCurrentCluster() {
-		let clusterSize = this.#writer.pos - this.#writer.dataOffsets.get(this.#currentCluster);
-		let endPos = this.#writer.pos;
+		if (!this.#options.streaming) {
+			let clusterSize = this.#writer.pos - this.#writer.dataOffsets.get(this.#currentCluster);
+			let endPos = this.#writer.pos;
 
-		// Write the size now that we know it
-		this.#writer.seek(this.#writer.offsets.get(this.#currentCluster) + 4);
-		this.#writer.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
-		this.#writer.seek(endPos);
+			// Write the size now that we know it
+			this.#writer.seek(this.#writer.offsets.get(this.#currentCluster) + 4);
+			this.#writer.writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
+			this.#writer.seek(endPos);
+		}
 
 		if (this.#writer instanceof BaseStreamTargetWriter && this.#writer.target.options.onCluster) {
 			let { data, start } = this.#writer.getTrackedWrites();
@@ -914,7 +916,7 @@ export class Muxer<T extends Target> {
 			this.#writeBlock(this.#subtitleChunkQueue.shift(), false);
 		}
 
-		if (this.#currentCluster && !this.#options.streaming) {
+		if (this.#currentCluster) {
 			this.#finalizeCurrentCluster();
 		}
 		this.#writer.writeEBML(this.#cues);
