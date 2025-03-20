@@ -755,31 +755,27 @@ export class Muxer<T extends Target> {
 		}
 
 		let msTimestamp = Math.floor(chunk.timestamp / 1000);
+		let relativeTimestamp = msTimestamp - this.#currentClusterTimestamp;
+
 		let shouldCreateNewClusterFromKeyFrame =
 			canCreateNewCluster &&
 			chunk.type === 'key' &&
-			msTimestamp - this.#currentClusterTimestamp >= 1000;
+			relativeTimestamp >= 1000;
+		let clusterWouldBeTooLong = relativeTimestamp >= MAX_CHUNK_LENGTH_MS;
 
 		if (
 			!this.#currentCluster ||
-			shouldCreateNewClusterFromKeyFrame
+			shouldCreateNewClusterFromKeyFrame ||
+			// If we hit this case, then we're sadly forced to create a chunk that starts with a delta chunk
+			clusterWouldBeTooLong
 		) {
 			this.#createNewCluster(msTimestamp);
+			relativeTimestamp = 0;
 		}
 
-		let relativeTimestamp = msTimestamp - this.#currentClusterTimestamp;
 		if (relativeTimestamp < 0) {
-			// The chunk lies out of the current cluster
+			// The chunk lies outside of the current cluster
 			return;
-		}
-
-		let clusterIsTooLong = relativeTimestamp >= MAX_CHUNK_LENGTH_MS;
-		if (clusterIsTooLong) {
-			throw new Error(
-				`Current Matroska cluster exceeded its maximum allowed length of ${MAX_CHUNK_LENGTH_MS} ` +
-				`milliseconds. In order to produce a correct WebM file, you must pass in a key frame at least every ` +
-				`${MAX_CHUNK_LENGTH_MS} milliseconds.`
-			);
 		}
 
 		let prelude = new Uint8Array(4);

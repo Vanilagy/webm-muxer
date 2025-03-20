@@ -849,7 +849,7 @@ var WebMMuxer = (() => {
       while (__privateGet(this, _subtitleChunkQueue).length > 0 && __privateGet(this, _subtitleChunkQueue)[0].timestamp <= __privateGet(this, _duration)) {
         __privateMethod(this, _writeBlock, writeBlock_fn).call(this, __privateGet(this, _subtitleChunkQueue).shift(), false);
       }
-      if (__privateGet(this, _currentCluster) && !__privateGet(this, _options).streaming) {
+      if (__privateGet(this, _currentCluster)) {
         __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
       }
       __privateGet(this, _writer).writeEBML(__privateGet(this, _cues));
@@ -1258,19 +1258,15 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
       __privateMethod(this, _createSegment, createSegment_fn).call(this);
     }
     let msTimestamp = Math.floor(chunk.timestamp / 1e3);
-    let shouldCreateNewClusterFromKeyFrame = canCreateNewCluster && chunk.type === "key" && msTimestamp - __privateGet(this, _currentClusterTimestamp) >= 1e3;
-    if (!__privateGet(this, _currentCluster) || shouldCreateNewClusterFromKeyFrame) {
-      __privateMethod(this, _createNewCluster, createNewCluster_fn).call(this, msTimestamp);
-    }
     let relativeTimestamp = msTimestamp - __privateGet(this, _currentClusterTimestamp);
+    let shouldCreateNewClusterFromKeyFrame = canCreateNewCluster && chunk.type === "key" && relativeTimestamp >= 1e3;
+    let clusterWouldBeTooLong = relativeTimestamp >= MAX_CHUNK_LENGTH_MS;
+    if (!__privateGet(this, _currentCluster) || shouldCreateNewClusterFromKeyFrame || clusterWouldBeTooLong) {
+      __privateMethod(this, _createNewCluster, createNewCluster_fn).call(this, msTimestamp);
+      relativeTimestamp = 0;
+    }
     if (relativeTimestamp < 0) {
       return;
-    }
-    let clusterIsTooLong = relativeTimestamp >= MAX_CHUNK_LENGTH_MS;
-    if (clusterIsTooLong) {
-      throw new Error(
-        `Current Matroska cluster exceeded its maximum allowed length of ${MAX_CHUNK_LENGTH_MS} milliseconds. In order to produce a correct WebM file, you must pass in a key frame at least every ${MAX_CHUNK_LENGTH_MS} milliseconds.`
-      );
     }
     let prelude = new Uint8Array(4);
     let view = new DataView(prelude.buffer);
@@ -1325,7 +1321,7 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
   };
   _createNewCluster = new WeakSet();
   createNewCluster_fn = function(timestamp) {
-    if (__privateGet(this, _currentCluster) && !__privateGet(this, _options).streaming) {
+    if (__privateGet(this, _currentCluster)) {
       __privateMethod(this, _finalizeCurrentCluster, finalizeCurrentCluster_fn).call(this);
     }
     if (__privateGet(this, _writer) instanceof BaseStreamTargetWriter && __privateGet(this, _writer).target.options.onCluster) {
@@ -1355,11 +1351,13 @@ If you want to allow non-zero first timestamps, set firstTimestampBehavior: 'per
   };
   _finalizeCurrentCluster = new WeakSet();
   finalizeCurrentCluster_fn = function() {
-    let clusterSize = __privateGet(this, _writer).pos - __privateGet(this, _writer).dataOffsets.get(__privateGet(this, _currentCluster));
-    let endPos = __privateGet(this, _writer).pos;
-    __privateGet(this, _writer).seek(__privateGet(this, _writer).offsets.get(__privateGet(this, _currentCluster)) + 4);
-    __privateGet(this, _writer).writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
-    __privateGet(this, _writer).seek(endPos);
+    if (!__privateGet(this, _options).streaming) {
+      let clusterSize = __privateGet(this, _writer).pos - __privateGet(this, _writer).dataOffsets.get(__privateGet(this, _currentCluster));
+      let endPos = __privateGet(this, _writer).pos;
+      __privateGet(this, _writer).seek(__privateGet(this, _writer).offsets.get(__privateGet(this, _currentCluster)) + 4);
+      __privateGet(this, _writer).writeEBMLVarInt(clusterSize, CLUSTER_SIZE_BYTES);
+      __privateGet(this, _writer).seek(endPos);
+    }
     if (__privateGet(this, _writer) instanceof BaseStreamTargetWriter && __privateGet(this, _writer).target.options.onCluster) {
       let { data, start } = __privateGet(this, _writer).getTrackedWrites();
       __privateGet(this, _writer).target.options.onCluster(data, start, __privateGet(this, _currentClusterTimestamp));
