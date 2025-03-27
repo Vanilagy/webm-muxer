@@ -155,8 +155,8 @@ var WebMMuxer = (() => {
       if (options.chunked !== void 0 && typeof options.chunked !== "boolean") {
         throw new TypeError("options.chunked, when provided, must be a boolean.");
       }
-      if (options.chunkSize !== void 0 && (!Number.isInteger(options.chunkSize) || options.chunkSize <= 0)) {
-        throw new TypeError("options.chunkSize, when provided, must be a positive integer.");
+      if (options.chunkSize !== void 0 && (!Number.isInteger(options.chunkSize) || options.chunkSize < 1024)) {
+        throw new TypeError("options.chunkSize, when provided, must be an integer and not smaller than 1024.");
       }
     }
   };
@@ -424,14 +424,25 @@ var WebMMuxer = (() => {
   _trackedWrites = new WeakMap();
   _trackedStart = new WeakMap();
   _trackedEnd = new WeakMap();
-  var _sections, _lastFlushEnd, _ensureMonotonicity;
+  var DEFAULT_CHUNK_SIZE = 2 ** 24;
+  var MAX_CHUNKS_AT_ONCE = 2;
+  var _sections, _lastFlushEnd, _ensureMonotonicity, _chunked, _chunkSize, _chunks, _writeDataIntoChunks, writeDataIntoChunks_fn, _insertSectionIntoChunk, insertSectionIntoChunk_fn, _createChunk, createChunk_fn, _flushChunks, flushChunks_fn;
   var StreamTargetWriter = class extends BaseStreamTargetWriter {
     constructor(target, ensureMonotonicity) {
       super(target);
+      __privateAdd(this, _writeDataIntoChunks);
+      __privateAdd(this, _insertSectionIntoChunk);
+      __privateAdd(this, _createChunk);
+      __privateAdd(this, _flushChunks);
       __privateAdd(this, _sections, []);
       __privateAdd(this, _lastFlushEnd, 0);
       __privateAdd(this, _ensureMonotonicity, void 0);
+      __privateAdd(this, _chunked, void 0);
+      __privateAdd(this, _chunkSize, void 0);
+      __privateAdd(this, _chunks, []);
       __privateSet(this, _ensureMonotonicity, ensureMonotonicity);
+      __privateSet(this, _chunked, target.options?.chunked ?? false);
+      __privateSet(this, _chunkSize, target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE);
     }
     write(data) {
       super.write(data);
@@ -469,54 +480,31 @@ var WebMMuxer = (() => {
             chunk.data.set(section.data, section.start - chunk.start);
           }
         }
-        if (__privateGet(this, _ensureMonotonicity) && chunk.start < __privateGet(this, _lastFlushEnd)) {
-          throw new Error("Internal error: Monotonicity violation.");
+        if (__privateGet(this, _chunked)) {
+          __privateMethod(this, _writeDataIntoChunks, writeDataIntoChunks_fn).call(this, chunk.data, chunk.start);
+          __privateMethod(this, _flushChunks, flushChunks_fn).call(this);
+        } else {
+          if (__privateGet(this, _ensureMonotonicity) && chunk.start < __privateGet(this, _lastFlushEnd)) {
+            throw new Error("Internal error: Monotonicity violation.");
+          }
+          this.target.options.onData?.(chunk.data, chunk.start);
+          __privateSet(this, _lastFlushEnd, chunk.start + chunk.data.byteLength);
         }
-        this.target.options.onData?.(chunk.data, chunk.start);
-        __privateSet(this, _lastFlushEnd, chunk.start + chunk.data.byteLength);
       }
       __privateGet(this, _sections).length = 0;
     }
     finalize() {
+      if (__privateGet(this, _chunked)) {
+        __privateMethod(this, _flushChunks, flushChunks_fn).call(this, true);
+      }
     }
   };
   _sections = new WeakMap();
   _lastFlushEnd = new WeakMap();
   _ensureMonotonicity = new WeakMap();
-  var DEFAULT_CHUNK_SIZE = 2 ** 24;
-  var MAX_CHUNKS_AT_ONCE = 2;
-  var _chunkSize, _chunks, _lastFlushEnd2, _ensureMonotonicity2, _writeDataIntoChunks, writeDataIntoChunks_fn, _insertSectionIntoChunk, insertSectionIntoChunk_fn, _createChunk, createChunk_fn, _flushChunks, flushChunks_fn;
-  var ChunkedStreamTargetWriter = class extends BaseStreamTargetWriter {
-    constructor(target, ensureMonotonicity) {
-      super(target);
-      __privateAdd(this, _writeDataIntoChunks);
-      __privateAdd(this, _insertSectionIntoChunk);
-      __privateAdd(this, _createChunk);
-      __privateAdd(this, _flushChunks);
-      __privateAdd(this, _chunkSize, void 0);
-      __privateAdd(this, _chunks, []);
-      __privateAdd(this, _lastFlushEnd2, 0);
-      __privateAdd(this, _ensureMonotonicity2, void 0);
-      __privateSet(this, _chunkSize, target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE);
-      __privateSet(this, _ensureMonotonicity2, ensureMonotonicity);
-      if (!Number.isInteger(__privateGet(this, _chunkSize)) || __privateGet(this, _chunkSize) < 2 ** 10) {
-        throw new Error("Invalid StreamTarget options: chunkSize must be an integer not smaller than 1024.");
-      }
-    }
-    write(data) {
-      super.write(data);
-      __privateMethod(this, _writeDataIntoChunks, writeDataIntoChunks_fn).call(this, data, this.pos);
-      __privateMethod(this, _flushChunks, flushChunks_fn).call(this);
-      this.pos += data.byteLength;
-    }
-    finalize() {
-      __privateMethod(this, _flushChunks, flushChunks_fn).call(this, true);
-    }
-  };
+  _chunked = new WeakMap();
   _chunkSize = new WeakMap();
   _chunks = new WeakMap();
-  _lastFlushEnd2 = new WeakMap();
-  _ensureMonotonicity2 = new WeakMap();
   _writeDataIntoChunks = new WeakSet();
   writeDataIntoChunks_fn = function(data, position) {
     let chunkIndex = __privateGet(this, _chunks).findIndex((x) => x.start <= position && position < x.start + __privateGet(this, _chunkSize));
@@ -586,19 +574,19 @@ var WebMMuxer = (() => {
       if (!chunk.shouldFlush && !force)
         continue;
       for (let section of chunk.written) {
-        if (__privateGet(this, _ensureMonotonicity2) && chunk.start + section.start < __privateGet(this, _lastFlushEnd2)) {
+        if (__privateGet(this, _ensureMonotonicity) && chunk.start + section.start < __privateGet(this, _lastFlushEnd)) {
           throw new Error("Internal error: Monotonicity violation.");
         }
         this.target.options.onData?.(
           chunk.data.subarray(section.start, section.end),
           chunk.start + section.start
         );
-        __privateSet(this, _lastFlushEnd2, chunk.start + section.end);
+        __privateSet(this, _lastFlushEnd, chunk.start + section.end);
       }
       __privateGet(this, _chunks).splice(i--, 1);
     }
   };
-  var FileSystemWritableFileStreamTargetWriter = class extends ChunkedStreamTargetWriter {
+  var FileSystemWritableFileStreamTargetWriter = class extends StreamTargetWriter {
     constructor(target, ensureMonotonicity) {
       super(new StreamTarget({
         onData: (data, position) => target.stream.write({
@@ -687,7 +675,7 @@ var WebMMuxer = (() => {
       if (options.target instanceof ArrayBufferTarget) {
         __privateSet(this, _writer, new ArrayBufferTargetWriter(options.target));
       } else if (options.target instanceof StreamTarget) {
-        __privateSet(this, _writer, options.target.options?.chunked ? new ChunkedStreamTargetWriter(options.target, ensureMonotonicity) : new StreamTargetWriter(options.target, ensureMonotonicity));
+        __privateSet(this, _writer, new StreamTargetWriter(options.target, ensureMonotonicity));
       } else if (options.target instanceof FileSystemWritableFileStreamTarget) {
         __privateSet(this, _writer, new FileSystemWritableFileStreamTargetWriter(options.target, ensureMonotonicity));
       } else {

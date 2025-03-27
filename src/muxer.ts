@@ -5,7 +5,6 @@ import { EncodedSubtitleChunk, EncodedSubtitleChunkMetadata } from './subtitles'
 import {
 	ArrayBufferTargetWriter,
 	BaseStreamTargetWriter,
-	ChunkedStreamTargetWriter,
 	FileSystemWritableFileStreamTargetWriter,
 	StreamTargetWriter,
 	Writer
@@ -119,9 +118,7 @@ export class Muxer<T extends Target> {
 		if (options.target instanceof ArrayBufferTarget) {
 			this.#writer = new ArrayBufferTargetWriter(options.target);
 		} else if (options.target instanceof StreamTarget) {
-			this.#writer = options.target.options?.chunked
-				? new ChunkedStreamTargetWriter(options.target, ensureMonotonicity)
-				: new StreamTargetWriter(options.target, ensureMonotonicity);
+			this.#writer =  new StreamTargetWriter(options.target, ensureMonotonicity);
 		} else if (options.target instanceof FileSystemWritableFileStreamTarget) {
 			this.#writer = new FileSystemWritableFileStreamTargetWriter(options.target, ensureMonotonicity);
 		} else {

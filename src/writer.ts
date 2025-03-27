@@ -280,6 +280,21 @@ export abstract class BaseStreamTargetWriter extends Writer {
 	}
 }
 
+const DEFAULT_CHUNK_SIZE = 2**24;
+const MAX_CHUNKS_AT_ONCE = 2;
+
+interface Chunk {
+	start: number,
+	written: ChunkSection[],
+	data: Uint8Array,
+	shouldFlush: boolean
+}
+
+interface ChunkSection {
+	start: number,
+	end: number
+}
+
 /**
  * Writes to a StreamTarget every time it is flushed, sending out all of the new data written since the
  * last flush. This is useful for streaming applications, like piping the output to disk.
@@ -293,10 +308,21 @@ export class StreamTargetWriter extends BaseStreamTargetWriter {
 	#lastFlushEnd = 0;
 	#ensureMonotonicity: boolean;
 
+	#chunked: boolean;
+	#chunkSize: number;
+	/**
+	 * The data is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed out.
+	 * A chunk is flushed if all of its contents have been written.
+	 */
+	#chunks: Chunk[] = [];
+
 	constructor(target: StreamTarget, ensureMonotonicity: boolean) {
 		super(target);
 
 		this.#ensureMonotonicity = ensureMonotonicity;
+
+		this.#chunked = target.options?.chunked ?? false;
+		this.#chunkSize = target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE;
 	}
 
 	override write(data: Uint8Array) {
@@ -350,68 +376,20 @@ export class StreamTargetWriter extends BaseStreamTargetWriter {
 				}
 			}
 
-			if (this.#ensureMonotonicity && chunk.start < this.#lastFlushEnd) {
-				throw new Error('Internal error: Monotonicity violation.');
-			}
+			if (this.#chunked) {
+				this.#writeDataIntoChunks(chunk.data, chunk.start);
+				this.#flushChunks();
+			} else {
+				if (this.#ensureMonotonicity && chunk.start < this.#lastFlushEnd) {
+					throw new Error('Internal error: Monotonicity violation.');
+				}
 
-			this.target.options.onData?.(chunk.data, chunk.start);
-			this.#lastFlushEnd = chunk.start + chunk.data.byteLength;
+				this.target.options.onData?.(chunk.data, chunk.start);
+				this.#lastFlushEnd = chunk.start + chunk.data.byteLength;
+			}
 		}
 
 		this.#sections.length = 0;
-	}
-
-	finalize() {}
-}
-
-const DEFAULT_CHUNK_SIZE = 2**24;
-const MAX_CHUNKS_AT_ONCE = 2;
-
-interface Chunk {
-	start: number,
-	written: ChunkSection[],
-	data: Uint8Array,
-	shouldFlush: boolean
-}
-
-interface ChunkSection {
-	start: number,
-	end: number
-}
-
-/**
- * Writes to a StreamTarget using a chunked approach: Data is first buffered in memory until it reaches a large enough
- * size, which is when it is piped to the StreamTarget. This is helpful for reducing the total amount of writes.
- */
-export class ChunkedStreamTargetWriter extends BaseStreamTargetWriter {
-	#chunkSize: number;
-	/**
-	 * The data is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed out.
-	 * A chunk is flushed if all of its contents have been written.
-	 */
-	#chunks: Chunk[] = [];
-
-	#lastFlushEnd = 0;
-	#ensureMonotonicity: boolean;
-
-	constructor(target: StreamTarget, ensureMonotonicity: boolean) {
-		super(target);
-
-		this.#chunkSize = target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE;
-		this.#ensureMonotonicity = ensureMonotonicity;
-
-		if (!Number.isInteger(this.#chunkSize) || this.#chunkSize < 2**10) {
-			throw new Error('Invalid StreamTarget options: chunkSize must be an integer not smaller than 1024.');
-		}
-	}
-
-	override write(data: Uint8Array) {
-		super.write(data);
-
-		this.#writeDataIntoChunks(data, this.pos);
-		this.#flushChunks();
-
-		this.pos += data.byteLength;
 	}
 
 	#writeDataIntoChunks(data: Uint8Array, position: number) {
@@ -515,15 +493,17 @@ export class ChunkedStreamTargetWriter extends BaseStreamTargetWriter {
 	}
 
 	finalize() {
-		this.#flushChunks(true);
+		if (this.#chunked) {
+			this.#flushChunks(true);
+		}
 	}
 }
 
 /**
- * Essentially a wrapper around ChunkedStreamTargetWriter, writing directly to disk using the File System Access API.
+ * Essentially a wrapper around a chunked StreamTargetWriter, writing directly to disk using the File System Access API.
  * This is useful for large files, as available RAM is no longer a bottleneck.
  */
-export class FileSystemWritableFileStreamTargetWriter extends ChunkedStreamTargetWriter {
+export class FileSystemWritableFileStreamTargetWriter extends StreamTargetWriter {
 	constructor(target: FileSystemWritableFileStreamTarget, ensureMonotonicity: boolean) {
 		super(new StreamTarget({
 			onData: (data, position) => target.stream.write({
