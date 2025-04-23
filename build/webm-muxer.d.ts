@@ -255,10 +255,6 @@ declare class SubtitleEncoder {
 	encode(text: string): void;
 }
 
-declare global {
-	let WebMMuxer: typeof WebMMuxer;
-}
-
 export {
 	Muxer,
 	MuxerOptions,
